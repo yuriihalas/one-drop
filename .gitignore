@@ -15,3 +15,6 @@ node_modules/
 
 # Local captures: test recordings and screenshots stay out of the history
 captures/
+
+# Local tooling and working notes
+.claude/
