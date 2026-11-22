@@ -19,6 +19,6 @@ html,body{margin:0;height:100%;background:#0d1b22;color:#e8eef0;font-family:syst
 button{font:inherit;font-size:14px;color:#e8eef0;background:#1c3642;border:1px solid #37596a;border-radius:10px;padding:9px 14px;cursor:pointer;white-space:nowrap}
 button:hover{background:#25485a}
 button.go{background:#2f8f6f;border-color:#63c9a4;color:#fff}
-#next{display:none}
+#next,#hint{display:none}
 #sub{font-size:13px;color:#8fa6af;margin-top:6px;width:100%;max-width:760px}
 @media (max-width:600px){#top{flex-wrap:wrap}#bar{flex-wrap:wrap}#msg{flex-basis:100%}}

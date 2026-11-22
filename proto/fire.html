@@ -8,10 +8,26 @@
 // Fuels differ: straw catches at once and burns out fast, a damp meadow needs a hot front, a forest is slow
 // to catch, burns long and hot, and throws embers that the wind carries over water.
 // Heat rises: on a slope the fire is pushed uphill exactly as a wind would push it, so it races up and will not come down.
+// A big fire makes its own wind: hot air goes up over it and the air around is drawn in. A small fire lit
+// within its reach is pulled toward it and burns the ground it was coming for. That is a backfire.
 const G = 96, DIF = 0.15, COOL = 0.10;
 const WATER = 0, GRASS = 1, STRAW = 2, DAMP = 3, FOREST = 4, ROCK = 5;
 const TH = [9, 0.30, 0.16, 0.62, 0.40, 9], BURN = [0, 16, 9, 14, 55, 0], HEAT = [0, 0.20, 0.20, 0.13, 0.30, 0];
 const fuel = new Uint8Array(G * G), st = new Uint8Array(G * G), tm = new Uint8Array(G * G), spark = new Uint8Array(G * G), sx = new Float32Array(G * G), sy = new Float32Array(G * G), hgt = new Float32Array(G * G);
+// Indraft, on a coarse grid. Burning mass feeds two smooth fields, a wide one and a narrow one. Their difference
+// has no slope at a fire's own edge and a slope toward the fire a little way off, so a front does not hold itself
+// back, while everything around it within a few dozen cells feels air moving toward it.
+const CG = 24, CS = G / CG, DW = 0.0163, DN = 0.05, KN = 0.072, DRATIO = Math.sqrt(KN / DN / (0.2 / DW)), G0 = 0.006; // both fields settle in about twenty steps, so a new fire does not blow itself outward while the wide one catches up
+const src = new Float32Array(CG * CG), cgx = new Float32Array(CG * CG), cgy = new Float32Array(CG * CG), dxw = new Float32Array(G * G), dyw = new Float32Array(G * G);
+let Bw = new Float32Array(CG * CG), Bn = new Float32Array(CG * CG), Bt = new Float32Array(CG * CG);
+function relax(B, d, kd) { for (let y = 0; y < CG; y++) for (let x = 0; x < CG; x++) { const c = y * CG + x, v = B[c]; Bt[c] = v + kd * ((x ? B[c - 1] : v) + (x < CG - 1 ? B[c + 1] : v) + (y ? B[c - CG] : v) + (y < CG - 1 ? B[c + CG] : v) - 4 * v) + d * (src[c] - v); } return Bt; }
+function draftStep() { const k = LVF.draft; src.fill(0);
+  for (let i = 0; i < G * G; i++) if (st[i] === 1) { const x = i % G, y = (i - x) / G; src[((y / CS) | 0) * CG + ((x / CS) | 0)] += HEAT[fuel[i]] / 0.2 / (CS * CS); }
+  for (let n = 0; n < 3; n++) { const q = relax(Bw, DW, 0.2); Bt = Bw; Bw = q; } { const q = relax(Bn, DN, KN); Bt = Bn; Bn = q; }
+  const F = c => Bw[c] - DRATIO * Bn[c];
+  for (let y = 0; y < CG; y++) for (let x = 0; x < CG; x++) { const c = y * CG + x, gx = (F(x < CG - 1 ? c + 1 : c) - F(x ? c - 1 : c)) / 2, gy = (F(y < CG - 1 ? c + CG : c) - F(y ? c - CG : c)) / 2, m = Math.hypot(gx, gy); cgx[c] = k * gx / (m + G0); cgy[c] = k * gy / (m + G0); }
+  for (let y = 0; y < G; y++) { const fy = Math.max(0, Math.min(CG - 1.001, (y + 0.5) / CS - 0.5)), iy = fy | 0, ty = fy - iy; for (let x = 0; x < G; x++) { const fx = Math.max(0, Math.min(CG - 1.001, (x + 0.5) / CS - 0.5)), ix = fx | 0, tx = fx - ix, c = iy * CG + ix;
+    dxw[y * G + x] = (cgx[c] * (1 - tx) + cgx[c + 1] * tx) * (1 - ty) + (cgx[c + CG] * (1 - tx) + cgx[c + CG + 1] * tx) * ty; dyw[y * G + x] = (cgy[c] * (1 - tx) + cgy[c + 1] * tx) * (1 - ty) + (cgy[c + CG] * (1 - tx) + cgy[c + CG + 1] * tx) * ty; } } }
 let H = new Float32Array(G * G), H2 = new Float32Array(G * G), wx = 0, wy = 0, burning = 0, stepN = 0, LVF = null, embers = [];
 const cellHash = i => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; h = (h * 2246822519) >>> 0; h ^= h >>> 13; return (h >>> 0) / 4294967296; };
 function fireBuild(L) { LVF = L; fuel.fill(GRASS); st.fill(0); tm.fill(0); spark.fill(0); H.fill(0); H2.fill(0); wx = L.wind[0]; wy = L.wind[1]; burning = 0; stepN = 0; embers = [];
@@ -21,15 +37,20 @@ function fireBuild(L) { LVF = L; fuel.fill(GRASS); st.fill(0); tm.fill(0); spark
   for (const b of L.fires) fuel[b[1] * G + b[0]] = STRAW;
   // hills are cones [cx, cy, radius, push]: the same push everywhere on the slope, pointing at the summit
   sx.fill(0); sy.fill(0); hgt.fill(0); for (const h of L.hills || []) for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) { const dx = h[0] - x, dy = h[1] - y, d = Math.hypot(dx, dy); if (d >= h[2]) continue;
-    const i = y * G + x, k = h[3] * Math.min(1, d / 5, (h[2] - d) / 4) / (d || 1); sx[i] += dx * k; sy[i] += dy * k; hgt[i] += 1 - d / h[2]; } }
+    const i = y * G + x, k = h[3] * Math.min(1, d / 5, (h[2] - d) / 4) / (d || 1); sx[i] += dx * k; sy[i] += dy * k; hgt[i] += 1 - d / h[2]; }
+  // a fire that is already burning when the level opens: ash behind it, a burning strip at its head
+  Bw.fill(0); Bn.fill(0); dxw.fill(0); dyw.fill(0);
+  if (L.ash) for (let y = L.ash[1]; y <= L.ash[3]; y++) for (let x = L.ash[0]; x <= L.ash[2]; x++) if (TH[fuel[y * G + x]] < 9) st[y * G + x] = 2;
+  if (L.wild) { const w = L.wild; for (let y = w[1]; y <= w[3]; y++) for (let x = w[0]; x <= w[2]; x++) { const i = y * G + x; if (TH[fuel[i]] >= 9) continue; st[i] = 1; tm[i] = 3 + Math.round((x - w[0]) / (w[2] - w[0]) * (BURN[fuel[i]] - 3)); H[i] = 2; } }
+  if (L.draft) for (let n = 0; n < 120; n++) draftStep(); }
 function ignite(i) { st[i] = 1; tm[i] = BURN[fuel[i]];
   // one tree in seven throws an ember when it catches; the wind decides where it lands
   if (fuel[i] === FOREST && (wx || wy) && cellHash(i) < 0.14) { const x = i % G, y = (i - x) / G, d = 22 + 30 * cellHash(i + 9), s = (cellHash(i + 5) - 0.5) * 9, w = Math.hypot(wx, wy);
     embers.push({ x, y, tx: x + wx / w * d * w / 0.3 - wy / w * s, ty: y + wy / w * d * w / 0.3 + wx / w * s, t: 0, n: 40 + 30 * cellHash(i + 3) }); } }
-function fireSpark(x, y) { for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) { const X = x + i, Y = y + j; if (X < 0 || Y < 0 || X >= G || Y >= G || i * i + j * j > 5) continue; const k = Y * G + X; if (TH[fuel[k]] < 9) { ignite(k); H[k] = 1.5; } } }
-function fireStep() { burning = 0; stepN++;
+function fireSpark(x, y) { for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) { const X = x + i, Y = y + j; if (X < 0 || Y < 0 || X >= G || Y >= G || i * i + j * j > 5) continue; const k = Y * G + X; if (TH[fuel[k]] < 9 && st[k] === 0) { ignite(k); H[k] = 1.5; } } }
+function fireStep() { burning = 0; stepN++; if (LVF.turn && stepN === LVF.turn[0]) { wx = LVF.turn[1]; wy = LVF.turn[2]; } if (LVF.draft) draftStep(); // the wind swings round once, at a set moment
   for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) { const i = y * G + x, c = H[i], l = x ? H[i - 1] : 0, r = x < G - 1 ? H[i + 1] : 0, u = y ? H[i - G] : 0, d = y < G - 1 ? H[i + G] : 0;
-    const ax = wx + sx[i], ay = wy + sy[i];
+    let ax = wx + sx[i] + dxw[i], ay = wy + sy[i] + dyw[i]; const am = Math.abs(ax) + Math.abs(ay); if (am > 0.3) { ax *= 0.3 / am; ay *= 0.3 / am; } // no air moves faster than the strongest wind in the game
     let v = c + DIF * (l + r + u + d - 4 * c) - ax * (ax > 0 ? c - l : r - c) - ay * (ay > 0 ? c - u : d - c) - COOL * c;
     if (st[i] === 1) { v += HEAT[fuel[i]]; burning++; if (--tm[i] === 0) st[i] = 2; }
     else if (st[i] === 0 && v > TH[fuel[i]]) ignite(i);
@@ -38,6 +59,7 @@ function fireStep() { burning = 0; stepN++;
   for (const e of embers) { if (e.t < 0) continue; if (++e.t >= e.n) { e.t = -1; const X = Math.round(e.tx), Y = Math.round(e.ty); if (X < 1 || Y < 1 || X >= G - 1 || Y >= G - 1) continue;
       for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const k = (Y + j) * G + X + i; H[k] += 0.9; if (st[k] === 0 && TH[fuel[k]] < 0.5) ignite(k); } burning++; } else burning++; } }
 function fireVerdict() { for (const h of LVF.huts || []) if (st[h[1] * G + h[0]]) return -1; if (burning || stepN < 3) return 0; return LVF.fires.every(b => st[b[1] * G + b[0]]) ? 1 : -1; }
+const windAt = i => { let ax = wx + sx[i] + dxw[i], ay = wy + sy[i] + dyw[i]; const am = Math.abs(ax) + Math.abs(ay); if (am > 0.3) { ax *= 0.3 / am; ay *= 0.3 / am; } return [ax, ay]; };
 const LEVELS = [
   { name: 'Іскра', text: 'Вогонь горить там, де є що палити, і лише один раз: по згарищу він не повернеться. Вода його зупиняє. Запаліть обидві ватри й не спаліть хату на острові.',
     wind: [0, 0], rects: [[44, 0, 48, 95, 0], [44, 40, 48, 55, 1], [60, 62, 92, 92, 0], [64, 66, 88, 88, 1]], fires: [[20, 62], [72, 30]], huts: [[76, 77]], best: [24, 30] },
@@ -48,10 +70,14 @@ const LEVELS = [
   { name: 'Мур', text: 'Кам\u2019яний мур не горить і не пропускає жар. У ньому є один пролом: вогонь пройде крізь нього й розійдеться за муром новим клином. Запаліть обидві ватри й не зачепіть хати.',
     wind: [0.3, 0], rects: [[50, 0, 53, 95, 5], [50, 30, 53, 40, 1]], fires: [[20, 60], [82, 30]], huts: [[82, 68], [34, 12]], best: [9, 57] },
   { name: 'Гора', text: 'Жар іде вгору, тому схилом вогонь біжить до вершини вузьким язиком, а вниз не спускається. На рівнині він розходиться на всі боки й підпалить гору звідусіль. Запаліть обидві ватри й не зачепіть хати.',
-    wind: [0, 0], hills: [[48, 46, 40, 0.3]], rects: [], fires: [[48, 46], [66, 64]], huts: [[78, 76], [30, 34], [60, 30]], best: [70, 67] }];
+    wind: [0, 0], hills: [[48, 46, 40, 0.3]], rects: [], fires: [[48, 46], [66, 64]], huts: [[78, 76], [30, 34], [60, 30]], best: [70, 67] },
+  { name: 'Вітер повертає', text: 'Вітер дме на схід, але скоро поверне на південь: стежте за смужкою під написом. Усе, що горітиме в ту мить, піде новим клином униз. Запаліть обидві ватри й не зачепіть хати.',
+    wind: [0.3, 0], turn: [60, 0, 0.3], rects: [], fires: [[44, 30], [62, 72]], huts: [[86, 30], [22, 70]], best: [37, 28] },
+  { name: 'Зустрічний пал', text: 'Ліс уже горить, і вітер жене пожежу до села через перешийок між озерами. Велика пожежа тягне до себе повітря: малий вогонь поблизу неї піде їй назустріч і випалить траву, якою вона мала пройти. Далеко від неї він сам побіжить за вітром. Один дотик: зупиніть пожежу.',
+    wind: [0.3, 0], draft: 0.9, rects: [[40, 0, 72, 42, 0], [40, 52, 72, 95, 0], [10, 0, 27, 95, 4]], wild: [20, 0, 27, 95], ash: [0, 0, 19, 95], fires: [], huts: [[84, 30], [84, 64], [90, 47]], best: [47, 47] }];
 // ---- drawing: the ground is painted once per level, fire, smoke and embers every frame
 const off = document.createElement('canvas'); off.width = off.height = G; const og = off.getContext('2d'), img = og.createImageData(G, G);
-let ground = null, groundKey = '', smoke = [], lastNow = 0;
+let ground = null, groundKey = '', smoke = [], motes = [], lastNow = 0;
 function paintGround(size, K) {
   const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d'), r = rng(41 + LEVELS.indexOf(LVF) * 13);
   g.fillStyle = '#3f7a34'; g.fillRect(0, 0, size, size);
@@ -84,9 +110,9 @@ function paintGround(size, K) {
 Proto({
   G, levels: LEVELS, speed: 5, idleText: 'Торкніться трави: туди впаде іскра.',
   build(L) { fireBuild(L); groundKey = ''; smoke = []; },
-  tap(x, y) { const f = fuel[y * G + x]; if (f === WATER || f === ROCK) { this.say('Тут іскра згасне. Торкніться трави чи лісу.'); return false; } fireSpark(x, y); this.say('Горить…'); },
+  tap(x, y) { const f = fuel[y * G + x]; if (st[y * G + x]) { this.say('Тут уже горить або вигоріло. Торкніться трави.'); return false; } if (f === WATER || f === ROCK) { this.say('Тут іскра згасне. Торкніться трави чи лісу.'); return false; } fireSpark(x, y); this.say('Горить…'); },
   step: fireStep, verdict: fireVerdict,
-  winText: () => 'Усі ватри горять, хати цілі.',
+  winText: () => LVF.fires.length ? 'Усі ватри горять, хати цілі.' : 'Пожежа згасла без поживи, село ціле.',
   failText: () => (LVF.huts || []).some(h => st[h[1] * G + h[0]]) ? 'Вогонь дійшов до хати.' : 'Вогонь згас, а запалено не всі ватри: ' + ((LVF.hills || []).length ? 'схилом униз він не спустився.' : 'проти вітру й через воду він не пройшов.'),
   after() { },
   draw(g, K, now, size) {
@@ -104,7 +130,7 @@ Proto({
     // flames: tongues leaning with the wind, brighter and taller in the forest
     g.save(); g.globalCompositeOperation = 'lighter';
     for (let i = 0; i < G * G; i++) { if (st[i] !== 1) continue; const t = cellHash(i), fl = Math.sin(now / 70 + t * 40); if (fl < -0.2) continue; const x = i % G, y = (i - x) / G, big = fuel[i] === FOREST ? 1.9 : 1;
-      const cx = (x + 0.5 + (wx + sx[i]) * 2.2 * (0.5 + fl * 0.5)) * K, cy = (y + 0.5 + (wy + sy[i]) * 2.2 - 0.5 * big * (0.6 + fl * 0.4)) * K, rad = (0.9 + 0.7 * t) * big * K;
+      const wa = windAt(i), cx = (x + 0.5 + wa[0] * 2.2 * (0.5 + fl * 0.5)) * K, cy = (y + 0.5 + wa[1] * 2.2 - 0.5 * big * (0.6 + fl * 0.4)) * K, rad = (0.9 + 0.7 * t) * big * K;
       const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rad); gr.addColorStop(0, 'rgba(255,244,190,.85)'); gr.addColorStop(0.45, 'rgba(255,150,40,.5)'); gr.addColorStop(1, 'rgba(255,60,0,0)'); g.fillStyle = gr; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
       if (smoke.length < 420 && t * 997 % 1 < 0.035 * big) smoke.push({ x: x + 0.5, y: y + 0.5, a: 0, r: 0.8 + t, big }); }
     // embers on their way, with a short arc so they read as flying
@@ -112,11 +138,18 @@ Proto({
       const gr = g.createRadialGradient(ex, ey, 0, ex, ey, 1.4 * K); gr.addColorStop(0, 'rgba(255,240,170,1)'); gr.addColorStop(1, 'rgba(255,90,0,0)'); g.fillStyle = gr; g.fillRect(ex - 1.4 * K, ey - 1.4 * K, 2.8 * K, 2.8 * K); }
     g.restore();
     // smoke drifts downwind and thins out
-    for (const s of smoke) { s.a += dt; s.x += (wx * 16 + 0.4) * dt; s.y += (wy * 16 - 1.6) * dt; const life = s.a / 2.6; if (life >= 1) continue; g.fillStyle = 'rgba(70,66,62,' + (0.2 * (1 - life)) + ')'; g.beginPath(); g.arc(s.x * K, s.y * K, (s.r + life * 3.4 * s.big) * K, 0, 7); g.fill(); }
+    for (const s of smoke) { s.a += dt; const wa = windAt(Math.max(0, Math.min(G - 1, s.y | 0)) * G + Math.max(0, Math.min(G - 1, s.x | 0))); s.x += (wa[0] * 16 + 0.4) * dt; s.y += (wa[1] * 16 - 1.6) * dt; const life = s.a / 2.6; if (life >= 1) continue; g.fillStyle = 'rgba(70,66,62,' + (0.2 * (1 - life)) + ')'; g.beginPath(); g.arc(s.x * K, s.y * K, (s.r + life * 3.4 * s.big) * K, 0, 7); g.fill(); }
     smoke = smoke.filter(s => s.a < 2.6);
-    if (wx || wy) { const r = rng(9); g.strokeStyle = 'rgba(255,255,255,.2)'; g.lineWidth = Math.max(1, K * 0.14); g.beginPath();
-      for (let k = 0; k < 22; k++) { const x = ((r() + now / 2600 * (wx > 0 ? 1 : -1)) % 1 + 1) % 1 * size, y = r() * size; g.moveTo(x, y); g.lineTo(x + wx * 26 * K, y + wy * 26 * K); } g.stroke();
-      const u = size / 600; g.fillStyle = 'rgba(8,24,32,.72)'; g.beginPath(); g.roundRect(size - 84 * u, 10 * u, 74 * u, 26 * u, 8 * u); g.fill(); g.fillStyle = '#e8eef0'; emoji(g, 'вітер →', size - 47 * u, 23 * u, 12 * u); }
+    // where a big fire pulls the air, show the air itself: motes that drift with the wind they are in
+    if (LVF.draft) { g.lineCap = 'round'; g.lineWidth = Math.max(1, K * 0.2); while (motes.length < 90) motes.push({ x: Math.random() * G, y: Math.random() * G, a: Math.random() * 2 });
+      for (const m of motes) { const i = Math.max(0, Math.min(G - 1, m.y | 0)) * G + Math.max(0, Math.min(G - 1, m.x | 0)), w = windAt(i); m.a += dt; m.x += w[0] * 34 * dt; m.y += w[1] * 34 * dt;
+        if (m.a > 2 || m.x < 0 || m.y < 0 || m.x >= G || m.y >= G || st[i] === 1) { m.x = Math.random() * G; m.y = Math.random() * G; m.a = 0; continue; }
+        g.strokeStyle = 'rgba(235,245,255,' + (0.42 * Math.sin(m.a / 2 * Math.PI)) + ')'; g.beginPath(); g.moveTo(m.x * K, m.y * K); g.lineTo((m.x - w[0] * 9) * K, (m.y - w[1] * 9) * K); g.stroke(); } }
+    if (wx || wy) { const r = rng(9); g.strokeStyle = 'rgba(255,255,255,.2)'; g.lineWidth = Math.max(1, K * 0.14); g.beginPath(); if (!LVF.draft)
+      for (let k = 0; k < 22; k++) { const x = ((r() + now / 2600 * Math.sign(wx)) % 1 + 1) % 1 * size, y = ((r() + now / 2600 * Math.sign(wy)) % 1 + 1) % 1 * size, a = LVF.draft ? windAt(Math.min(G - 1, (y / K) | 0) * G + Math.min(G - 1, (x / K) | 0)) : [wx, wy]; g.moveTo(x, y); g.lineTo(x + a[0] * 26 * K, y + a[1] * 26 * K); } g.stroke();
+      const u = size / 600; const arrow = (x, y) => x > 0 ? '→' : x < 0 ? '←' : y > 0 ? '↓' : '↑', tn = LVF.turn && stepN < LVF.turn[0], lab = 'вітер ' + arrow(wx, wy) + (tn ? ', далі ' + arrow(LVF.turn[1], LVF.turn[2]) : ''), bw = (tn ? 128 : 74) * u;
+      g.fillStyle = 'rgba(8,24,32,.72)'; g.beginPath(); g.roundRect(size - bw - 10 * u, 10 * u, bw, 26 * u, 8 * u); g.fill(); g.fillStyle = '#e8eef0'; emoji(g, lab, size - 10 * u - bw / 2, 23 * u, 12 * u);
+      if (tn && stepN) { g.fillStyle = '#ffb070'; g.fillRect(size - bw - 4 * u, 33 * u, (bw - 12 * u) * (1 - stepN / LVF.turn[0]), 2 * u); } }
     for (const b of LVF.fires) { const lit = st[b[1] * G + b[0]] > 0, x = (b[0] + .5) * K, y = (b[1] + .5) * K; g.fillStyle = '#5b5852'; g.beginPath(); g.arc(x, y, 3.1 * K, 0, 7); g.fill(); g.fillStyle = '#2a2622'; g.beginPath(); g.arc(x, y, 2.3 * K, 0, 7); g.fill();
       g.strokeStyle = '#7a5230'; g.lineWidth = K * 0.7; g.lineCap = 'round'; g.beginPath(); g.moveTo(x - 1.4 * K, y + 0.9 * K); g.lineTo(x + 1.4 * K, y - 0.9 * K); g.moveTo(x - 1.4 * K, y - 0.9 * K); g.lineTo(x + 1.4 * K, y + 0.9 * K); g.stroke();
       if (lit) { const gl = g.createRadialGradient(x, y, 0, x, y, 9 * K); gl.addColorStop(0, 'rgba(255,200,90,.6)'); gl.addColorStop(1, 'rgba(255,200,90,0)'); g.fillStyle = gl; g.fillRect(x - 9 * K, y - 9 * K, 18 * K, 18 * K); g.fillStyle = '#fff'; emoji(g, '🔥', x, y - 1.2 * K, 5.2 * K); } }

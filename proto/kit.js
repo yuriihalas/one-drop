@@ -14,10 +14,10 @@ function Proto(P) {
   document.body.insertAdjacentHTML('beforeend',
     '<div id="wrap"><div id="top"><a href="index.html">← Стихії</a><b id="lvname"></b><span id="lvs"></span></div>' +
     '<div id="stage"><canvas id="cv"></canvas><div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button class="go" id="cgo">Почати</button></div></div></div>' +
-    '<div id="bar"><div id="msg"></div><button id="again">Ще раз</button><button id="next" class="go">Далі</button></div>' +
-    '<div id="sub">Прототип. Один дотик на спробу.</div></div>');
+    '<div id="bar"><div id="msg"></div><button id="hint">Підказка</button><button id="again">Ще раз</button><button id="next" class="go">Далі</button></div>' +
+    '<div id="sub">Прототип. Один дотик на спробу. Після трьох невдалих спроб з’явиться підказка.</div></div>');
   const cv = $('cv'), g = cv.getContext('2d'), stage = $('stage');
-  let size = 600, lv = 0, state = 'card', tries = 0;
+  let size = 600, lv = 0, state = 'card', tries = 0, hintOn = false;
   P.say = t => { $('msg').textContent = t; };
   function resize() {
     const css = Math.max(240, Math.min(innerWidth - 24, innerHeight - (innerWidth < 600 ? 250 : 190), 760)), dpr = Math.min(devicePixelRatio || 1, 2);
@@ -26,7 +26,7 @@ function Proto(P) {
   addEventListener('resize', resize); resize();
   P.levels.forEach((L, k) => { const b = document.createElement('button'); b.className = 'lv'; b.textContent = k + 1; b.title = L.name; b.onclick = () => setLevel(k); $('lvs').appendChild(b); });
   function setLevel(i) {
-    lv = i; tries = 0; const L = P.levels[i]; P.L = L; P.build(L);
+    lv = i; tries = 0; hintOn = false; $('hint').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
     document.querySelectorAll('.lv').forEach((b, k) => b.classList.toggle('cur', k === i));
     $('lvname').textContent = (i + 1) + '. ' + L.name; $('cnum').textContent = 'РІВЕНЬ ' + (i + 1) + ' З ' + P.levels.length;
     $('cname').textContent = L.name; $('ctext').textContent = L.text; $('card').classList.add('on'); $('next').style.display = 'none'; state = 'card'; P.say('');
@@ -35,8 +35,8 @@ function Proto(P) {
   function reset() { if (state === 'card') return; P.build(P.L); state = 'idle'; $('next').style.display = 'none'; P.say(P.idleText || 'Торкніться поля.'); }
   function finish(v) {
     state = v > 0 ? 'win' : 'lost';
-    if (v > 0) { P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
-    else P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.');
+    if (v > 0) { $('hint').style.display = 'none'; P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
+    else { P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.'); if (tries >= 3 && P.L.best && !hintOn) $('hint').style.display = 'inline-block'; }
   }
   function cell(e) { const r = stage.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * P.G), Math.floor((e.clientY - r.top) / r.height * P.G)]; }
   P.hover = null;
@@ -49,19 +49,24 @@ function Proto(P) {
     const [x, y] = cell(e); if (x < 0 || y < 0 || x >= P.G || y >= P.G) return;
     if (P.tap(x, y) === false) return; tries++; state = 'run';
   });
+  $('hint').onclick = () => { hintOn = true; $('hint').style.display = 'none'; reset(); P.say('Спробуйте там, де пульсує коло.'); };
   $('again').onclick = reset; $('cgo').onclick = begin; $('next').onclick = () => setLevel(lv < P.levels.length - 1 ? lv + 1 : 0);
   addEventListener('keydown', e => { if (e.repeat) return; if (state === 'card' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); begin(); } else if (e.code === 'KeyR') reset(); else if (e.code === 'KeyN' && state === 'win') $('next').onclick(); });
   function frame(now) {
     if (state === 'run') { for (let k = 0; k < (P.speed || 1) && state === 'run'; k++) { P.step(); const v = P.verdict(); if (v) finish(v); } }
     else if ((state === 'win' || state === 'lost') && P.after) P.after();
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, size, size); P.state = state; P.draw(g, size / P.G, now, size);
+    if (hintOn && state === 'idle') { // the hint: a slow pulsing ring on a spot that is known to win
+      const K = size / P.G, b = P.L.best, ph = now / 900 % 1; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
+      g.lineWidth = Math.max(2, K * 0.35); g.strokeStyle = 'rgba(255,255,255,' + (0.9 * (1 - ph)) + ')'; g.beginPath(); g.arc((b[0] + 0.5) * K, (b[1] + 0.5) * K, (1.5 + ph * 4) * K, 0, 7); g.stroke();
+      g.strokeStyle = 'rgba(255,214,120,.95)'; g.beginPath(); g.arc((b[0] + 0.5) * K, (b[1] + 0.5) * K, 1.5 * K, 0, 7); g.stroke(); g.restore(); }
     requestAnimationFrame(frame);
   }
   // Test hook: jump to a level, tap a cell, run to the end without drawing.
   window.__p = {
     level: i => { setLevel(i); begin(); },
     tap: (x, y) => { reset(); if (P.tap(x, y) === false) return 'refused'; tries++; state = 'run'; let n = 0; while (state === 'run' && n++ < 200000) { P.step(); const v = P.verdict(); if (v) finish(v); } return state; },
-    state: () => state, P
+    state: () => state, P, hint: () => hintOn
   };
   setLevel(0); requestAnimationFrame(frame);
 }

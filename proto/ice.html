@@ -36,7 +36,7 @@ const LEVELS = [{"name":"Кристал","text":"Крижаний кристал
 const G = 96, SX = 1.1547, cold0 = new Float32Array(N);
 const low = document.createElement('canvas'); low.width = W; low.height = HH; const lg = low.getContext('2d'), limg = lg.createImageData(W, HH);
 const mask = document.createElement('canvas'); mask.width = W; mask.height = HH; const mg = mask.getContext('2d'), mimg = mg.createImageData(W, HH);
-let ground = null, iceC = null, icg = null, key = '', drawn = 0, sparks = [], steam = [], lastNow = 0, lostBy = '';
+let ground = null, iceC = null, icg = null, key = '', drawn = 0, sparks = [], steam = [], lastNow = 0, lostBy = '', winT = 0;
 const hash = i => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; h = (h * 2246822519) >>> 0; h ^= h >>> 13; return (h >>> 0) / 4294967296; };
 const px = (i, K) => { const x = i % W, y = (i - x) / W; return [(x + (y & 1) * 0.5 + 0.5) * SX * K, (y + 0.5) * K]; };
 const at = (p, K) => [(p[0] + 0.5) * SX * K, (p[1] + 0.5) * K];
@@ -83,7 +83,7 @@ Proto({
   draw(g, K, now, size) {
     const k2 = size + ':' + LEVELS.indexOf(LVI); if (k2 !== key) { ground = paintGround(size, K); iceC = document.createElement('canvas'); iceC.width = iceC.height = size; icg = iceC.getContext('2d'); drawn = 0; key = k2; }
     if (drawn > fresh.length) { icg.clearRect(0, 0, size, size); drawn = 0; }
-    const dt = Math.min(0.05, (now - lastNow) / 1000); lastNow = now; g.drawImage(ground, 0, 0); addIce(K);
+    const dt = Math.min(0.25, (now - lastNow) / 1000); lastNow = now; g.drawImage(ground, 0, 0); addIce(K);
     // steam over the warm springs
     for (const sp of LVI.springs || []) if (steam.length < 60 && Math.random() < 0.25) steam.push({ x: sp[0] + (Math.random() - 0.5) * sp[2] * 1.4, y: sp[1] + (Math.random() - 0.5) * sp[2], a: 0 });
     for (const m of steam) { m.a += dt; m.y -= dt * 1.6; const l = m.a / 3; if (l < 1) { const [x, y] = at([m.x, m.y], K); g.fillStyle = 'rgba(210,235,230,' + 0.1 * Math.sin(l * Math.PI) + ')'; g.beginPath(); g.arc(x, y, (1 + l * 2.5) * K, 0, 7); g.fill(); } } steam = steam.filter(m => m.a < 3);
@@ -99,6 +99,8 @@ Proto({
     for (const sp of sparks) { sp.a += dt; const l = sp.a / 0.7; if (l >= 1) continue; const [x, y] = px(sp.i, K), rad = (1.5 - l) * 1.6 * K, gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, 'rgba(255,255,255,' + 0.9 * (1 - l) + ')'); gr.addColorStop(1, 'rgba(140,200,255,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); }
     sparks = sparks.filter(sp => sp.a < 0.7);
     for (let k = 0; k < 26 && fresh.length; k++) { const t = now / 1400 + k * 0.37, ph = t % 1, i = fresh[Math.floor(hash(k * 977 + Math.floor(t) * 131) * fresh.length)], [x, y] = px(i, K); star(g, x, y, (0.6 + 2.2 * Math.sin(ph * Math.PI)) * K, 0.85 * Math.sin(ph * Math.PI)); }
+    // on a win a band of light runs through the crystal in the order it froze, from the seed to the tips
+    if (this.state === 'win') { winT += dt; const n = fresh.length, head = (winT * 0.55 % 1.5) * n; for (let k = Math.max(0, Math.floor(head - n * 0.07)); k < Math.min(n, head); k++) { const [x, y] = px(fresh[k], K), rad = 1.5 * K, a2 = 0.5 * (1 - (head - k) / (n * 0.07)), gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, 'rgba(255,236,190,' + a2 + ')'); gr.addColorStop(1, 'rgba(255,200,120,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); } } else winT = 0;
     g.restore();
     // lanterns and ducks
     for (const p of LVI.posts) { const lit = near(p, 3), [x, y] = at(p, K); const gl = g.createRadialGradient(x, y, 0, x, y, (lit ? 11 : 5) * K); gl.addColorStop(0, lit ? 'rgba(255,196,90,.75)' : 'rgba(255,196,90,.22)'); gl.addColorStop(1, 'rgba(255,196,90,0)'); g.fillStyle = gl; g.fillRect(x - 11 * K, y - 11 * K, 22 * K, 22 * K);
