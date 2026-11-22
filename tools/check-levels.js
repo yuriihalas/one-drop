@@ -7,7 +7,7 @@ const fs = require('fs'), vm = require('vm'), path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const core = html.split('//CORE>')[1].split('//<CORE')[0];
 const levelsSrc = 'const LEVELS=' + html.split('const LEVELS=')[1].split('}];')[0] + '}];';
-const ctx = { Math, Float32Array, Uint8Array };
+const ctx = { Math, Float32Array, Uint8Array, Int32Array };
 vm.createContext(ctx);
 vm.runInContext(core + '\n' + levelsSrc +
   '\nthis.api={buildLevel,simReset,simDrop,simTick,canDrop,judge,get MX(){return MX},N,STEPS,LEVELS};', ctx);
