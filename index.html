@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Одна крапля</title>
+<style>
+html,body{margin:0;height:100%;background:#0d1b22;color:#e8eef0;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+#wrap{display:flex;flex-direction:column;align-items:center;padding:12px;box-sizing:border-box;min-height:100%}
+#top{display:flex;align-items:center;gap:8px;width:100%;max-width:900px;margin-bottom:8px;font-size:14px;color:#a9c3ce}
+#top b{font-weight:600;color:#e8eef0;margin-right:auto}
+.lv{width:34px;padding:6px 0;text-align:center}
+.lv.cur{background:#2f6d86;border-color:#6fb3cf}
+#stage{position:relative;border-radius:16px;overflow:hidden;touch-action:none;cursor:crosshair}
+#stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+#ov{transition:opacity .3s}
+.barx{position:absolute;left:0;width:100%;height:0;background:#000;transition:height .7s cubic-bezier(.2,.7,.2,1)}
+#bt{top:0}#bb{bottom:0}
+#stage.fin .barx{height:9%}
+#rep{position:absolute;left:4%;top:11%;font-size:13px;letter-spacing:.14em;color:#ffe2b0;opacity:0;transition:opacity .4s;pointer-events:none}
+#rep.on{opacity:.9}
+#fin{position:absolute;left:0;right:0;bottom:13%;text-align:center;opacity:0;transform:translateY(10px);transition:opacity 1s,transform 1s;pointer-events:none;text-shadow:0 2px 14px rgba(0,0,0,.55)}
+#fin.on{opacity:1;transform:none}
+#fin b{display:block;font-weight:600;font-size:clamp(24px,5.4vw,48px);color:#fff}
+#fin span{font-size:clamp(14px,2.4vw,19px);color:#ffe2b0}
+#card{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,18,24,.55)}
+#card.on{display:flex}
+#card div{max-width:420px;margin:16px;background:#13303c;border:1px solid #37596a;border-radius:16px;padding:22px 24px;text-align:center}
+#card small{letter-spacing:.14em;color:#8fc7dc;font-size:12px}
+#card h2{margin:8px 0 10px;font-size:24px;font-weight:600}
+#card p{margin:0 0 18px;font-size:15px;line-height:1.5;color:#cfdadd}
+#bar{display:flex;gap:10px;align-items:center;margin-top:12px;width:100%;max-width:900px}
+#msg{flex:1;font-size:15px;line-height:1.4;min-height:42px;color:#cfdadd}
+button{font:inherit;font-size:14px;color:#e8eef0;background:#1c3642;border:1px solid #37596a;border-radius:10px;padding:9px 14px;cursor:pointer;white-space:nowrap}
+button:hover{background:#25485a}
+button.go{background:#2f8f6f;border-color:#63c9a4;color:#fff}
+#next{display:none}
+kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;padding:0 5px;margin-left:6px;color:#a9c3ce}
+#sub{font-size:13px;color:#8fa6af;margin-top:6px;width:100%;max-width:900px}
+</style></head><body><div id="wrap">
+<div id="top"><b id="lvname"></b><span>Рівень</span><button class="lv">1</button><button class="lv">2</button><button class="lv">3</button><button class="lv">4</button></div>
+<div id="stage"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="barx" id="bt"></div><div class="barx" id="bb"></div><div id="rep">ПОВТОР</div><div id="fin"><b id="fint"></b><span id="fins"></span></div>
+<div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button class="go" id="cgo">Почати</button></div></div></div>
+<div id="bar"><div id="msg"></div><button id="hint">Підказка<kbd>H</kbd></button><button id="again">Ще раз<kbd>R</kbd></button><button id="next" class="go">Далі<kbd>N</kbd></button></div>
+<div id="sub">Спроб: <span id="tries">0</span>. Пунктирні кільця показують, де буде хвиля в перші півтори секунди. Хрестики показують, куди ви вже кидали.</div>
+</div>
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v;out vec4 o;
+uniform sampler2D uH;uniform float uT,uF,uTilt,uFin,uBase;uniform vec3 uCP,uCT,uUp;
+uniform vec4 uPond,uB[4],uBar[3];uniform vec3 uLand[2],uRock[3];uniform float uLt[4];
+const float N=120.;
+float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+7.1;a*=.5;}return s;}
+float H(vec2 s){return texture(uH,s/N).r;}
+float ell(vec2 s){vec2 q=(s-uPond.xy)/uPond.zw;return dot(q,q);}
+float depthAt(vec2 s){float d=min(1.,(1.-ell(s))*uBase);for(int i=0;i<3;i++){vec2 q=s-uBar[i].xy;d-=uBar[i].z*exp(-dot(q,q)/uBar[i].w);}return clamp(d,.1,1.);}
+float shore(vec2 s){float r=(1.-sqrt(ell(s)))*min(uPond.z,uPond.w);for(int i=0;i<2;i++)r=min(r,length(s-uLand[i].xy)-uLand[i].z);return r;}
+float caus(vec2 p,float t){const float TAU=6.28318;p=mod(p,TAU)-250.;vec2 i=p;float c=1.,k=.005;
+for(int n=0;n<4;n++){float tt=t*(1.-(3.5/float(n+1)));i=p+vec2(cos(tt-i.x)+sin(tt+i.y),sin(tt-i.y)+cos(tt+i.x));c+=1./length(vec2(p.x/(sin(i.x+tt)/k),p.y/(cos(i.y+tt)/k)));}
+c/=4.;c=1.17-pow(c,1.4);return pow(abs(c),8.);}
+vec3 sunCol(){return mix(vec3(1.,.97,.9),vec3(1.,.66,.3),uFin);}
+vec3 sky(vec3 d,vec3 L){float z=max(d.z,0.);
+vec3 day=mix(vec3(.8,.88,.97),vec3(.3,.55,.92),pow(z,.5)),eve=mix(vec3(1.,.6,.28),vec3(.26,.28,.55),pow(z,.42));
+vec3 c=mix(day,eve,uFin);
+float cl=smoothstep(.5,.75,fbm(d.xy/(z+.25)*1.3+uT*.01));c=mix(c,mix(vec3(1.),vec3(1.,.72,.55),uFin),cl*.5);
+float sd=max(dot(d,L),0.);c+=sunCol()*pow(sd,22.)*.3*(.4+uFin);return c;}
+float sph(vec3 ro,vec3 rd,vec3 c,float r){vec3 oc=ro-c;float b=dot(oc,rd),h=b*b-dot(oc,oc)+r*r;if(h<0.)return -1.;return -b-sqrt(h);}
+void main(){vec2 p=vec2(v.x*2.-1.,1.-v.y*2.);
+vec3 fw=normalize(uCT-uCP),rt=normalize(cross(uUp,fw)),up=cross(fw,rt);
+vec3 rd=normalize(fw*uF+rt*p.x+up*p.y),ro=uCP;
+vec3 L=normalize(mix(vec3(-.45,-.55,.7),vec3(-.16,-.92,.2),uFin)),SC=sunCol();
+vec3 V=normalize(mix(vec3(0.,.33,1.),-rd,uTilt));
+vec3 col;float tHit=1e9;
+if(rd.z>-1e-4){col=sky(rd,L)+SC*pow(max(dot(rd,L),0.),600.)*6.;}
+else{float t=-ro.z/rd.z;vec2 s=(ro+rd*t).xy;float sh=shore(s);
+if(sh>=0.){t=(H(s)*9.*uTilt-ro.z)/rd.z;s=(ro+rd*t).xy;sh=shore(s);}
+tHit=t;
+if(sh<0.){float tt=clamp(-sh/6.,0.,1.);
+vec3 sand=vec3(.86,.78,.6)*(.86+.28*fbm(s*1.3));
+vec3 grass=mix(vec3(.17,.36,.13),vec3(.38,.56,.2),fbm(s*.3))*(.75+.5*noise(s*4.));
+col=mix(sand,grass,smoothstep(.3,.75,tt+(fbm(s*.45)-.5)*.6));
+col*=mix(.66,1.,smoothstep(0.,1.8,-sh));col*=mix(vec3(1.),vec3(1.05,.8,.62),uFin);}
+else{float h=H(s),e=.75;float hx=H(s+vec2(e,0))-H(s-vec2(e,0)),hy=H(s+vec2(0,e))-H(s-vec2(0,e));
+vec2 a=vec2(noise(s*.8+vec2(uT*.55,0.))-.5,noise(s*.8+vec2(5.,uT*.45))-.5)*.05+(vec2(noise(s*2.6-uT*.9),noise(s*2.6+uT*.8+9.))-.5)*.02;
+vec3 n=normalize(vec3(-hx*12.-a.x*.6,-hy*12.-a.y*.6,1.));
+float dep=depthAt(s);vec2 sb=s+n.xy*(2.+11.*dep)+rd.xy/max(-rd.z,.15)*dep*3.*uTilt;if(shore(sb)<.3)sb=s;
+vec3 bt=vec3(.86,.78,.6)*(.8+.32*fbm(sb*.8));
+bt*=.92+.08*sin(sb.x*1.5+sin(sb.y*.45)*2.+fbm(sb*.3)*6.);
+float pb=smoothstep(.7,.76,noise(sb*1.1+30.));bt=mix(bt,vec3(.46,.44,.4)*(.8+.4*noise(sb*4.)),pb*.7);
+float lap=H(s+vec2(1,0))+H(s-vec2(1,0))+H(s+vec2(0,1))+H(s-vec2(0,1))-4.*h;
+float ca=caus(sb*.36,uT*.65)*(1.15-.75*dep)+max(-lap,0.)*10.;
+bt*=(.74+ca)*mix(vec3(1.),vec3(1.1,.85,.6),uFin);
+vec3 tr=exp(-dep*dep*vec3(4.4,1.75,1.05));
+col=bt*tr+mix(vec3(.01,.16,.28),vec3(.05,.1,.2),uFin)*(1.-tr);col*=1.+clamp(h*4.5,-.35,.6);
+col+=mix(vec3(.85,.95,1.),vec3(1.,.85,.6),uFin)*smoothstep(.025,.11,h)*.26;
+vec2 so=-normalize(L.xy)*(.6+uFin*1.4);
+for(int i=0;i<3;i++){float ds=length(s-uRock[i].xy-so*uRock[i].z);col*=mix(.6,1.,smoothstep(uRock[i].z*.9,uRock[i].z*1.2,ds));}
+for(int i=0;i<4;i++){float dg=length(s-uB[i].xy);col+=vec3(1.,.55,.12)*exp(-dg*dg/60.)*uFin*uB[i].w*(.45+.15*sin(uT*5.+float(i)));}
+float F=.03+.97*pow(1.-max(dot(n,V),0.),5.);
+vec3 R=reflect(-V,n);R.z=abs(R.z);
+col=mix(col,sky(R,L),clamp(F*1.3,0.,.92));
+float sd=max(dot(R,L),0.);col+=SC*(pow(sd,300.)*3.2+pow(sd,40.)*.25*uFin);
+float fo=smoothstep(1.7,0.,sh+(noise(s*1.6+uT*.35)-.5)*1.5+sin(uT*1.4+s.x*.3+s.y*.2)*.3);col=mix(col,vec3(.96,.98,.99)*mix(vec3(1.),vec3(1.,.85,.7),uFin),fo*.6);
+vec3 TN=mix(vec3(1.),vec3(1.08,.84,.66),uFin*.7);
+for(int i=0;i<4;i++){vec2 q=s-uB[i].xy;float sc=1.+clamp(H(uB[i].xy)*2.4,-.12,.32);float r=length(q)/sc;if(r<5.4){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
+float notch=smoothstep(.05,.2,abs(a-(float(i)*1.3-2.))-.02);
+float pad=smoothstep(4.7,4.45,r)*notch;
+vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/4.7)*(.65+.55*max(dot(n,L),0.))*TN*(.9+.5*(sc-1.));
+col=mix(col,pc,pad*.97);
+col=mix(col,vec3(1.,1.,.95),(1.-lit)*.95*smoothstep(.24,.06,abs(length(q)-3.9))*step(.45,fract(a*3.82)));
+float ro2=1.15+2.65*w,l1=.5+.5*pow(abs(cos(a*4.)),.55),l2=.5+.5*pow(abs(sin(a*4.)),.55);
+float p1=smoothstep(ro2*l1,ro2*l1-.28,r);vec3 c1=mix(vec3(1.,.96,.95),vec3(.96,.5,.7),smoothstep(0.,ro2,r))*(.82+.18*smoothstep(ro2*l1,ro2*l1*.6,r));
+col=mix(col,c1*TN,p1);
+float ri=ro2*.63,p2=smoothstep(ri*l2,ri*l2-.22,r);vec3 c2=mix(vec3(1.),vec3(1.,.7,.82),smoothstep(0.,ri,r))*(.86+.14*smoothstep(ri*l2,ri*l2*.6,r));
+col=mix(col,c2*TN,p2);
+float cr=.3+.6*min(w,1.);col=mix(col,mix(vec3(.9,.62,.16),vec3(1.,.86,.32),lit),smoothstep(cr,cr-.18,r)*smoothstep(.2,.55,w));
+col+=vec3(.42,.26,.06)*lit*(.6+uFin)*smoothstep(4.2,0.,r)*(.75+.25*sin(uT*5.+float(i)));}}
+}
+float fd=length(s-60.);col=mix(col,sky(normalize(vec3(rd.xy,.02)),L),smoothstep(110.,700.,fd)*uTilt);}
+vec3 Hh=normalize(L+V);
+for(int i=0;i<3;i++){if(uRock[i].z<.5)continue;vec3 c=vec3(uRock[i].xy,-uRock[i].z*.3);float ts=sph(ro,rd,c,uRock[i].z*1.05);if(ts>0.&&ts<tHit){tHit=ts;vec3 q=ro+rd*ts;vec2 s=q.xy;
+vec3 n=normalize(normalize(q-c)+vec3((noise(s*1.7)-.5)*.5,(noise(s*1.7+4.)-.5)*.5,0.));
+vec3 base=vec3(.56,.55,.52)*(.72+.5*fbm(s*.9+float(i)*3.));base=mix(base,vec3(.3,.36,.22),smoothstep(.55,.8,fbm(s*.7+2.))*.5);
+col=base*(.3+.9*max(dot(n,L),0.))*mix(vec3(1.),vec3(1.15,.8,.55),uFin)+SC*pow(max(dot(n,Hh),0.),30.)*.12;col*=mix(.55,1.,smoothstep(0.,2.,q.z));}}
+for(int i=0;i<4;i++){if(uB[i].w>.5){vec2 c=uB[i].xy;float dd=dot(rd.xy,rd.xy)+1e-5,tb=dot(c-ro.xy,rd.xy)/dd,zb=ro.z+rd.z*tb,d=length(ro.xy+rd.xy*tb-c),lt=uLt[i],hg=9.+34.*exp(-lt*1.3);
+float g=exp(-d*d/(1.2+2.5*exp(-lt*3.)))*smoothstep(0.,1.5,zb)*exp(-max(zb,0.)/hg)*step(0.,tb)*step(tb,tHit+3.);
+col+=vec3(1.,.78,.35)*g*(.55+1.6*exp(-lt*2.))*uTilt;}}
+col*=1.-uFin*.35*smoothstep(.5,1.4,length(p));
+o=vec4(col,1.);}
+</script>
+<script>
+const N=120,STEPS=760,DAMP=0.9982;
+const LEVELS=[
+{name:'Відстань',lesson:'Хвиля слабшає з відстанню. Киньте краплю так, щоб вона була досить близько до обох латать.',pond:[60,60,54,50],lands:[],rocks:[],bars:[],base:2.6,lilies:[[30,60],[90,60]],T:0.0819,hint:[60,42,15],best:[60,39]},
+{name:'Відбиття',lesson:'Берег відбиває хвилю. У довгому ставку відбита хвиля знову збирається в одну точку на іншому кінці.',pond:[60,60,56,36],lands:[],rocks:[],bars:[],base:30,lilies:[[103,60],[60,36]],T:0.115,hint:[14,60,12],best:[12,60]},
+{name:'Мілина і камінь',lesson:'Світле дно — це мілина: над нею хвиля йде повільніше і завертає. Камінь хвилю затуляє. Перед кидком подивіться на пунктирні кільця.',pond:[60,60,55,52],lands:[],rocks:[[60,64,6]],bars:[[60,40,.8,280]],base:2.6,lilies:[[25,80],[95,80],[60,100]],T:0.0812,hint:[38,90,14],best:[36,93]},
+{name:'Ставок',lesson:'Тепер усе разом: відстань, береги, каміння і мілини. Одна крапля, чотири латаття.',pond:[60,60,56,53],lands:[[64,122,24],[-4,14,26]],rocks:[[44,60,7],[80,44,6],[72,86,8]],bars:[[60,30,.75,260],[92,66,.7,180],[26,80,.6,200]],base:2.6,lilies:[[24,50],[90,24],[40,98],[100,78]],T:0.068,hint:[60,27,15],best:[63,30]}];
+const blk=new Uint8Array(N*N),land=new Uint8Array(N*N),dep=new Float32Array(N*N),c2=new Float32Array(N*N);
+let LV=null,BUOYS=[],U=new Float32Array(N*N),P=new Float32Array(N*N),Q=new Float32Array(N*N),MX=[],STEP=0;
+function buildLevel(L){LV=L;BUOYS=L.lilies;blk.fill(0);land.fill(0);const[cx,cy,rx,ry]=L.pond;
+for(let y=0;y<N;y++)for(let x=0;x<N;x++){const i=y*N+x;const e=((x-cx)/rx)**2+((y-cy)/ry)**2;let out=e>=1||x<1||y<1||x>N-2||y>N-2;
+for(const[lx,ly,lr]of L.lands)if((x-lx)**2+(y-ly)**2<lr*lr)out=true;
+if(out){blk[i]=1;land[i]=1;dep[i]=0;c2[i]=0;continue}
+for(const[rx2,ry2,rr]of L.rocks)if((x-rx2)**2+(y-ry2)**2<rr*rr)blk[i]=1;
+let d=Math.min(1,(1-e)*L.base);for(const[bx,by,ba,bw]of L.bars)d-=ba*Math.exp(-((x-bx)**2+(y-by)**2)/bw);
+d=Math.max(0.1,Math.min(1,d));dep[i]=d;c2[i]=0.25*(0.22+0.78*d)}simReset()}
+function simReset(){U.fill(0);P.fill(0);Q.fill(0);MX=BUOYS.map(()=>0);STEP=0}
+function simDrop(dx,dy){for(let y=-7;y<=7;y++)for(let x=-7;x<=7;x++){const X=dx+x,Y=dy+y;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-Math.exp(-(x*x+y*y)/7);U[Y*N+X]=v;P[Y*N+X]=v}}
+function simTick(){for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++){const i=y*N+x;if(blk[i])continue;const c=U[i];
+const l=blk[i-1]?c:U[i-1],r=blk[i+1]?c:U[i+1],t=blk[i-N]?c:U[i-N],d=blk[i+N]?c:U[i+N];
+Q[i]=(2*c-P[i]+c2[i]*(l+r+t+d-4*c))*DAMP}
+const q=P;P=U;U=Q;Q=q;STEP++;
+for(let k=0;k<BUOYS.length;k++){const v=Math.abs(U[BUOYS[k][1]*N+BUOYS[k][0]]);if(v>MX[k])MX[k]=v}}
+function canDrop(x,y){if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x])return 0;for(const[bx,by]of BUOYS)if(Math.hypot(bx-x,by-y)<16)return 0;return 1}
+const $=id=>document.getElementById(id);
+const stage=$('stage'),glc=$('gl'),ov=$('ov'),g=ov.getContext('2d'),finEl=$('fin'),card=$('card');
+const gl=glc.getContext('webgl2',{antialias:false});
+const say=t=>$('msg').textContent=t;
+const SPEED=150;
+let lvI=0,T=0.068,state='card',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
+let camK=0,camGoal=0,camDur=1.8,theta=0,finT=0,ringT=0,tscale=1,fin=0,finGoal=0,phase='',dropAt=null;
+let disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[],closing=false;
+let hover=null,isDown=false,tt=null,ttKey='',paths=null;
+function resize(){const css=Math.max(260,Math.min(innerWidth-24,innerHeight-190,900)),dpr=Math.min(devicePixelRatio||1,2);stage.style.width=stage.style.height=css+'px';size=Math.round(css*dpr);glc.width=glc.height=ov.width=ov.height=size;paths=null;if(gl)gl.viewport(0,0,size,size)}
+addEventListener('resize',resize);resize();
+let prog,U_={},tex;
+if(!gl){say('Цей браузер не підтримує WebGL2, тому воду показати не можна.')}else{
+const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s};
+prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,'#version 300 es\nout vec2 v;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2))*2.-1.;v=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}'));
+gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,$('fs').textContent));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
+for(const n of['uT','uB','uF','uTilt','uFin','uCP','uCT','uUp','uPond','uLand','uRock','uBar','uBase','uLt'])U_[n]=gl.getUniformLocation(prog,n);
+tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texStorage2D(gl.TEXTURE_2D,1,gl.R16F,N,N);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.bindVertexArray(gl.createVertexArray())}
+function setLevel(i){lvI=i;const L=LEVELS[i];buildLevel(L);T=L.T;tries=0;marks=[];hintLv=0;$('tries').textContent=0;
+document.querySelectorAll('.lv').forEach((b,k)=>b.classList.toggle('cur',k===i));$('lvname').textContent='Рівень '+(i+1)+'. '+L.name;
+if(gl){gl.uniform4f(U_.uPond,...L.pond);const ld=new Float32Array([-999,-999,0,-999,-999,0]);L.lands.forEach((a,k)=>ld.set(a,k*3));gl.uniform3fv(U_.uLand,ld);
+const rk=new Float32Array([-999,-999,0,-999,-999,0,-999,-999,0]);L.rocks.forEach((a,k)=>rk.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uRock,rk);
+const br=new Float32Array([0,0,0,1,0,0,0,1,0,0,0,1]);L.bars.forEach((a,k)=>br.set(a,k*4));gl.uniform4fv(U_.uBar,br);gl.uniform1f(U_.uBase,L.base)}
+reset();state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}
+function begin(){if(state!=='card')return;card.classList.remove('on');state='idle';idleText()}
+function idleText(){say('Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
+function reset(){simReset();if(state!=='card')state='idle';splash=null;wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;
+stage.classList.remove('fin');finEl.classList.remove('on');$('rep').classList.remove('on');$('next').style.display='none';if(state==='idle'){idleText();if(hintLv)showHint()}}
+function showHint(){if(hintLv===1)say('Підказка 1: '+LEVELS[lvI].lesson);
+if(hintLv===2)say('Підказка 2: шукайте місце всередині жовтого кола.');
+if(hintLv>=3)say('Підказка 3: точне місце позначено жовтою цяткою.')}
+function hint(){if(state==='card')return;if(hintLv<3)hintLv++;if(state!=='idle')reset();showHint()}
+function drop(x,y){simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push([x,y]);splash={x,y,t:0};say('Хвиля йде…')}
+function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
+function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;
+$('fint').textContent=BUOYS.length===2?'Обидва розкрилися':BUOYS.length===3?'Усі три розкрилися':'Усі чотири розкрилися';
+$('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;
+say('Хвиля підняла всі латаття до межі, і вони розкрилися.');$('next').style.display='inline-block';$('next').firstChild.textContent=lvI<LEVELS.length-1?'Далі':'З початку'}
+function next(){setLevel(lvI<LEVELS.length-1?lvI+1:0)}
+const DIRS=[];for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){if(!dx&&!dy)continue;const gcd=(a,b)=>b?gcd(b,a%b):a;if(gcd(Math.abs(dx),Math.abs(dy))!==1)continue;DIRS.push([dx,dy,Math.hypot(dx,dy)])}
+function travel(sx,sy){const d=new Float64Array(N*N).fill(1e9),hp=[],hk=[];const push=(i,k)=>{let n=hp.length;hp.push(i);hk.push(k);while(n>0){const p=(n-1)>>1;if(hk[p]<=k)break;hp[n]=hp[p];hk[n]=hk[p];n=p}hp[n]=i;hk[n]=k};
+const pop=()=>{const ti=hp[0],tk=hk[0],li=hp.pop(),lk=hk.pop(),len=hp.length;if(len){let n=0;for(;;){let c=n*2+1;if(c>=len)break;if(c+1<len&&hk[c+1]<hk[c])c++;if(hk[c]>=lk)break;hp[n]=hp[c];hk[n]=hk[c];n=c}hp[n]=li;hk[n]=lk}return[ti,tk]};
+d[sy*N+sx]=0;push(sy*N+sx,0);while(hp.length){const[i,k]=pop();if(k>d[i])continue;if(k>245)break;const x=i%N,y=(i-x)/N;
+for(const[dx,dy,len]of DIRS){const X=x+dx,Y=y+dy;if(X<1||Y<1||X>=N-1||Y>=N-1)continue;const j=Y*N+X;if(blk[j])continue;let ok=1,cs=c2[i]+c2[j],cn=2;const m=Math.max(Math.abs(dx),Math.abs(dy));for(let q=1;q<m;q++){const mi=Math.round(y+dy*q/m)*N+Math.round(x+dx*q/m);if(blk[mi]){ok=0;break}cs+=c2[mi];cn++}if(!ok)continue;
+const nk=k+len/Math.sqrt(cs/cn);if(nk<d[j]){d[j]=nk;push(j,nk)}}}return d}
+function contour(d,lv,K){const p=new Path2D();for(let y=1;y<N-2;y++)for(let x=1;x<N-2;x++){const i=y*N+x,a=d[i],b=d[i+1],c=d[i+N+1],e=d[i+N];if(a>1e8||b>1e8||c>1e8||e>1e8)continue;const pts=[];
+if((a<lv)!==(b<lv))pts.push(x+(lv-a)/(b-a),y);if((b<lv)!==(c<lv))pts.push(x+1,y+(lv-b)/(c-b));if((e<lv)!==(c<lv))pts.push(x+(lv-e)/(c-e),y+1);if((a<lv)!==(e<lv))pts.push(x,y+(lv-a)/(e-a));
+for(let q=0;q+3<pts.length;q+=4){p.moveTo((pts[q]+.5)*K,(pts[q+1]+.5)*K);p.lineTo((pts[q+2]+.5)*K,(pts[q+3]+.5)*K)}}return p}
+function overlay(){const K=size/N,px=size/600;g.clearRect(0,0,size,size);ov.style.opacity=camK<0.02?1:0;if(camK>=0.02)return;
+g.lineWidth=1.5*px;g.strokeStyle='rgba(255,255,255,.55)';for(const[x,y]of marks){const a=(x+.5)*K,b=(y+.5)*K,r=4*px;g.beginPath();g.moveTo(a-r,b-r);g.lineTo(a+r,b+r);g.moveTo(a+r,b-r);g.lineTo(a-r,b+r);g.stroke()}
+const L=LEVELS[lvI];
+if(hintLv>=2&&state==='idle'){g.strokeStyle='rgba(250,199,117,.95)';g.lineWidth=2.5*px;g.setLineDash([8*px,6*px]);g.beginPath();g.arc(L.hint[0]*K,L.hint[1]*K,L.hint[2]*K,0,7);g.stroke();g.setLineDash([])}
+if(hintLv>=3&&state==='idle'){g.fillStyle='#FAC775';g.beginPath();g.arc((L.best[0]+.5)*K,(L.best[1]+.5)*K,5*px,0,7);g.fill();g.strokeStyle='#412402';g.lineWidth=1.5*px;g.stroke()}
+if(state==='idle'){for(const[x,y]of BUOYS){g.setLineDash([3*px,7*px]);g.strokeStyle='rgba(255,255,255,.3)';g.lineWidth=1*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,16*K,0,7);g.stroke();g.setLineDash([])}
+if(hover){const[hx,hy]=hover,cx=(hx+.5)*K,cy=(hy+.5)*K;if(canDrop(hx,hy)){const key=hx+','+hy+','+lvI;if(key!==ttKey){ttKey=key;tt=travel(hx,hy);paths=null}
+if(!paths)paths=[48,96,144,192,240].map(lv=>contour(tt,lv,K));g.setLineDash([5*px,5*px]);g.lineWidth=1.6*px;paths.forEach((p,k)=>{g.strokeStyle='rgba(255,255,255,'+(0.75-k*0.13)+')';g.stroke(p)});g.setLineDash([]);
+g.strokeStyle='#fff';g.lineWidth=2*px;g.beginPath();g.arc(cx,cy,5*px,0,7);g.stroke()}
+else{g.strokeStyle='rgba(240,120,110,.95)';g.lineWidth=2.5*px;const r=6*px;g.beginPath();g.moveTo(cx-r,cy-r);g.lineTo(cx+r,cy+r);g.moveTo(cx+r,cy-r);g.lineTo(cx-r,cy+r);g.stroke()}}}
+if(splash&&splash.t<1){const a=splash.t;g.strokeStyle='rgba(255,255,255,'+(0.9*(1-a))+')';g.lineWidth=(3*(1-a)+1)*px;g.beginPath();g.arc((splash.x+.5)*K,(splash.y+.5)*K,(6+a*30)*px,0,7);g.stroke()}
+for(const b of bursts){if(b.t<0||b.t>=1)continue;const a=b.t;g.strokeStyle='rgba(255,214,120,'+(0.95*(1-a))+')';g.lineWidth=(5*(1-a)+1)*px;g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(4+a*13)*K,0,7);g.stroke();
+g.fillStyle='rgba(255,236,180,'+(0.35*(1-a)*(1-a))+')';g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(3+a*6)*K,0,7);g.fill()}}
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+function camera(){const k=ease(camK),el=(90-68*k)*Math.PI/180,d=Math.exp(Math.log(600)*(1-k)+Math.log(104)*k),ex=60+12*k,th=theta*Math.min(1,k*3);
+const tg=[60,60-3*k,0],cp=[tg[0]+d*Math.cos(el)*Math.sin(th),tg[1]+d*Math.cos(el)*Math.cos(th),d*Math.sin(el)];
+const w=Math.min(1,k*5),up=[0,-(1-w),w],ul=Math.hypot(up[1],up[2]);
+gl.uniform3f(U_.uCP,cp[0],cp[1],cp[2]);gl.uniform3f(U_.uCT,tg[0],tg[1],tg[2]);gl.uniform3f(U_.uUp,0,up[1]/ul,up[2]/ul);gl.uniform1f(U_.uF,d/ex);gl.uniform1f(U_.uTilt,Math.min(1,k*1.5));gl.uniform1f(U_.uFin,fin)}
+function steps(dt,limit){acc+=dt*SPEED*tscale;let n=0;while(acc>=1&&(!limit||STEP<STEPS)&&n<12){simTick();acc-=1;n++}if(acc>3)acc=0}
+function finale(dt,now){finT+=dt;
+if(phase==='A'){tscale=Math.max(0.14,1-finT/0.3*0.86);steps(dt);const n=Math.floor(finT/0.28);if(n>win.n&&win.n<BUOYS.length){const b=BUOYS[litOrder[win.n]??win.n];bursts.push({x:b[0],y:b[1],t:0});win.n++}
+if(finT>0.35+0.28*BUOYS.length){phase='B';finT=0;camGoal=1;camDur=1.9;finGoal=0.45;closing=true;stage.classList.add('fin')}}
+else if(phase==='B'){const f=Math.pow(0.02,dt);for(let i=0;i<N*N;i++){U[i]*=f;P[i]*=f}if(camGoal)theta+=dt*0.1;
+if(finT>2.1){simReset();wasLit=[0,0,0,0];litOrder=[];closing=false;simDrop(dropAt[0],dropAt[1]);phase='C';finT=0;tscale=0.5;$('rep').classList.add('on')}}
+else if(phase==='C'){theta+=dt*0.1;steps(dt,true);if(MX.every(v=>v>=T)||STEP>=STEPS){phase='D';finT=0;finGoal=1;$('rep').classList.remove('on')}}
+else{theta+=dt*0.11;tscale=finT<1.3?0.12:Math.min(0.5,0.12+(finT-1.3)*0.3);steps(dt);
+if(ringT<0&&finT>0.5){BUOYS.forEach(([x,y])=>ring(x,y,0.5));ringT=finT}
+if(ringT>0&&finT-ringT>2.4){const b=BUOYS[Math.floor(Math.random()*BUOYS.length)];ring(b[0],b[1],0.4);ringT=finT}
+if(finT>0.9)finEl.classList.add('on')}}
+function frame(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
+camK+=Math.sign(camGoal-camK)*Math.min(Math.abs(camGoal-camK),dt/camDur);
+fin+=Math.sign(finGoal-fin)*Math.min(Math.abs(finGoal-fin),dt/(finGoal?1.6:0.6));
+for(const b of bursts)b.t+=dt*(state==='win'?1.1:1.6);
+BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLit[k]=now;litOrder.push(k);bursts.push({x,y,t:0})}
+const pop=wasLit[k]&&!closing?0.22*Math.exp(-(now-wasLit[k])/260):0,tg=closing?0:(f>=1?1:Math.pow(f,2.4)*0.9);disp[k]+=(tg-disp[k])*Math.min(1,dt*(closing?3:7));BUOYS[k].show=Math.max(0,disp[k])+pop});
+if(state==='win')finale(dt,now);
+else if(state==='run'){steps(dt,true);if(MX.every(v=>v>=T))win();
+else if(STEP>=STEPS){state='done';const lit=MX.filter(v=>v>=T).length;say('Розкрилося '+lit+' з '+BUOYS.length+'. До решти хвиля дійшла заслабка: пелюстки не доросли до пунктирної межі. Натисніть R, щоб спробувати ще раз.')}}
+else if(state==='done'&&STEP<STEPS*3){simTick();simTick()}
+if(splash)splash.t+=dt*2;
+if(gl){gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,N,N,gl.RED,gl.FLOAT,U);gl.uniform1f(U_.uT,now/1000);
+const b=new Float32Array(16).fill(-999),lt=new Float32Array(4).fill(99);BUOYS.forEach(([x,y],k)=>{b[k*4]=x+.5;b[k*4+1]=y+.5;b[k*4+2]=BUOYS[k].show||0;const on=wasLit[k]&&!closing;b[k*4+3]=on?1:0;if(on)lt[k]=(now-wasLit[k])/1000});for(let k=BUOYS.length;k<4;k++){b[k*4+2]=0;b[k*4+3]=0}
+gl.uniform4fv(U_.uB,b);gl.uniform1fv(U_.uLt,lt);camera();gl.drawArrays(gl.TRIANGLES,0,3)}
+overlay();requestAnimationFrame(frame)}
+function cell(e){const r=stage.getBoundingClientRect();return[Math.floor((e.clientX-r.left)/r.width*N),Math.floor((e.clientY-r.top)/r.height*N)]}
+stage.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||isDown)hover=cell(e)});
+stage.addEventListener('pointerdown',e=>{if(e.target.closest('#card'))return;isDown=true;hover=cell(e)});
+stage.addEventListener('pointerleave',()=>{hover=null;isDown=false});
+stage.addEventListener('pointerup',e=>{if(!isDown)return;isDown=false;if(state!=='idle'||camK>0.01)return;const[x,y]=cell(e);if(e.pointerType!=='mouse')hover=null;
+if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x]){say('Сюди кинути не можна. Киньте краплю у воду.');return}
+if(!canDrop(x,y)){say('Занадто близько до латаття. Киньте далі від пунктирного кола.');return}drop(x,y)});
+$('again').onclick=reset;$('hint').onclick=hint;$('next').onclick=next;$('cgo').onclick=begin;
+document.querySelectorAll('.lv').forEach((b,k)=>b.onclick=()=>setLevel(k));
+addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
+if(state==='card'){if(e.code==='Enter'||e.code==='Space'){e.preventDefault();begin()}return}
+if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}if(e.code==='KeyN'&&state==='win'){e.preventDefault();next()}});
+window.__test={level:i=>{setLevel(i);begin()},drop:(x,y)=>{reset();camK=0;fin=0;drop(x,y)},hover:(x,y)=>{hover=[x,y]},
+fast:()=>{while(state==='run'&&STEP<STEPS&&!MX.every(v=>v>=T))simTick()},state:()=>[lvI,state,phase,STEP,+camK.toFixed(2),+finT.toFixed(1),MX.map(v=>+(v/T).toFixed(2))]};
+setLevel(0);requestAnimationFrame(frame);
+</script></body></html>

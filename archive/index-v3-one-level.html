@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Одна крапля</title>
+<style>
+html,body{margin:0;height:100%;background:#0d1b22;color:#e8eef0;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+#wrap{display:flex;flex-direction:column;align-items:center;padding:12px;box-sizing:border-box;min-height:100%}
+#stage{position:relative;border-radius:16px;overflow:hidden;touch-action:none;cursor:crosshair}
+#stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+#ov{transition:opacity .3s}
+.barx{position:absolute;left:0;width:100%;height:0;background:#000;transition:height .7s cubic-bezier(.2,.7,.2,1)}
+#bt{top:0}#bb{bottom:0}
+#stage.fin .barx{height:9%}
+#fin{position:absolute;left:0;right:0;bottom:13%;text-align:center;opacity:0;transform:translateY(10px);transition:opacity 1s,transform 1s;pointer-events:none;text-shadow:0 2px 14px rgba(0,0,0,.55)}
+#fin.on{opacity:1;transform:none}
+#fin b{display:block;font-weight:600;font-size:clamp(26px,6vw,52px);letter-spacing:.01em;color:#fff}
+#fin span{font-size:clamp(14px,2.4vw,19px);color:#ffe2b0}
+#bar{display:flex;gap:10px;align-items:center;margin-top:12px;width:100%;max-width:900px}
+#msg{flex:1;font-size:15px;line-height:1.4;min-height:42px;color:#cfdadd}
+button{font:inherit;font-size:14px;color:#e8eef0;background:#1c3642;border:1px solid #37596a;border-radius:10px;padding:9px 14px;cursor:pointer;white-space:nowrap}
+button:hover{background:#25485a}
+kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;padding:0 5px;margin-left:6px;color:#a9c3ce}
+#sub{font-size:13px;color:#8fa6af;margin-top:6px;width:100%;max-width:900px}
+</style></head><body><div id="wrap">
+<div id="stage"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="barx" id="bt"></div><div class="barx" id="bb"></div><div id="fin"><b>Усі чотири розкрилися</b><span id="fins"></span></div></div>
+<div id="bar"><div id="msg"></div><button id="hint">Підказка<kbd>H</kbd></button><button id="again">Ще раз<kbd>R</kbd></button></div>
+<div id="sub">Спроб: <span id="tries">0</span>. Світле дно означає мілину: там хвиля йде повільніше і завертає. Хрестики показують, куди ви вже кидали.</div>
+</div>
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v;out vec4 o;
+uniform sampler2D uH;uniform float uT,uF,uTilt,uFin;uniform vec3 uCP,uCT,uUp;uniform vec4 uB[4];
+const float N=120.,ZS=5.;
+const vec3 RK[3]=vec3[3](vec3(44.5,60.5,7.),vec3(80.5,44.5,6.),vec3(72.5,86.5,8.));
+float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+7.1;a*=.5;}return s;}
+float H(vec2 s){return texture(uH,s/N).r;}
+float depthAt(vec2 s){float e=pow((s.x-60.)/56.,2.)+pow((s.y-60.)/53.,2.);float d=min(1.,(1.-e)*2.6);
+d-=.75*exp(-(pow(s.x-60.,2.)+pow(s.y-30.,2.))/260.);d-=.7*exp(-(pow(s.x-92.,2.)+pow(s.y-66.,2.))/180.);d-=.6*exp(-(pow(s.x-26.,2.)+pow(s.y-80.,2.))/200.);return clamp(d,.1,1.);}
+float shore(vec2 s){float e=sqrt(pow((s.x-60.)/56.,2.)+pow((s.y-60.)/53.,2.));return min((1.-e)*54.,min(length(s-vec2(64.,122.))-24.,length(s-vec2(-4.,14.))-26.));}
+float caus(vec2 p,float t){const float TAU=6.28318;p=mod(p,TAU)-250.;vec2 i=p;float c=1.,k=.005;
+for(int n=0;n<4;n++){float tt=t*(1.-(3.5/float(n+1)));i=p+vec2(cos(tt-i.x)+sin(tt+i.y),sin(tt-i.y)+cos(tt+i.x));c+=1./length(vec2(p.x/(sin(i.x+tt)/k),p.y/(cos(i.y+tt)/k)));}
+c/=4.;c=1.17-pow(c,1.4);return pow(abs(c),8.);}
+vec3 sunCol(){return mix(vec3(1.,.97,.9),vec3(1.,.66,.3),uFin);}
+vec3 sky(vec3 d,vec3 L){float z=max(d.z,0.);
+vec3 day=mix(vec3(.8,.88,.97),vec3(.3,.55,.92),pow(z,.5)),eve=mix(vec3(1.,.6,.28),vec3(.26,.28,.55),pow(z,.42));
+vec3 c=mix(day,eve,uFin);
+float cl=smoothstep(.5,.75,fbm(d.xy/(z+.25)*1.3+uT*.01));c=mix(c,mix(vec3(1.),vec3(1.,.72,.55),uFin),cl*.5);
+float sd=max(dot(d,L),0.);c+=sunCol()*pow(sd,22.)*.3*(.4+uFin);return c;}
+float sph(vec3 ro,vec3 rd,vec3 c,float r){vec3 oc=ro-c;float b=dot(oc,rd),h=b*b-dot(oc,oc)+r*r;if(h<0.)return -1.;return -b-sqrt(h);}
+void main(){vec2 p=vec2(v.x*2.-1.,1.-v.y*2.);
+vec3 fw=normalize(uCT-uCP),rt=normalize(cross(uUp,fw)),up=cross(fw,rt);
+vec3 rd=normalize(fw*uF+rt*p.x+up*p.y),ro=uCP;
+vec3 L=normalize(mix(vec3(-.45,-.55,.7),vec3(-.16,-.92,.2),uFin)),SC=sunCol();
+vec3 V=normalize(mix(vec3(0.,.33,1.),-rd,uTilt));
+vec3 col;float tHit=1e9;
+if(rd.z>-1e-4){col=sky(rd,L)+SC*pow(max(dot(rd,L),0.),600.)*6.;}
+else{float t=-ro.z/rd.z;vec2 s=(ro+rd*t).xy;float sh=shore(s);
+if(sh>=0.){t=(H(s)*ZS*uTilt-ro.z)/rd.z;s=(ro+rd*t).xy;sh=shore(s);}
+tHit=t;
+if(sh<0.){float tt=clamp(-sh/6.,0.,1.);
+vec3 sand=vec3(.86,.78,.6)*(.86+.28*fbm(s*1.3));
+vec3 grass=mix(vec3(.17,.36,.13),vec3(.38,.56,.2),fbm(s*.3))*(.75+.5*noise(s*4.));
+col=mix(sand,grass,smoothstep(.3,.75,tt+(fbm(s*.45)-.5)*.6));
+col*=mix(.66,1.,smoothstep(0.,1.8,-sh));col*=mix(vec3(1.),vec3(1.05,.8,.62),uFin);}
+else{float h=H(s),e=.75;float hx=H(s+vec2(e,0))-H(s-vec2(e,0)),hy=H(s+vec2(0,e))-H(s-vec2(0,e));
+vec2 a=vec2(noise(s*.8+vec2(uT*.55,0.))-.5,noise(s*.8+vec2(5.,uT*.45))-.5)*.05+(vec2(noise(s*2.6-uT*.9),noise(s*2.6+uT*.8+9.))-.5)*.02;
+vec3 n=normalize(vec3(-hx*12.-a.x*.6,-hy*12.-a.y*.6,1.));
+float dep=depthAt(s);vec2 sb=s+n.xy*(2.+11.*dep)+rd.xy/max(-rd.z,.15)*dep*3.*uTilt;if(shore(sb)<.3)sb=s;
+vec3 bt=vec3(.86,.78,.6)*(.8+.32*fbm(sb*.8));
+bt*=.92+.08*sin(sb.x*1.5+sin(sb.y*.45)*2.+fbm(sb*.3)*6.);
+float pb=smoothstep(.7,.76,noise(sb*1.1+30.));bt=mix(bt,vec3(.46,.44,.4)*(.8+.4*noise(sb*4.)),pb*.7);
+float lap=H(s+vec2(1,0))+H(s-vec2(1,0))+H(s+vec2(0,1))+H(s-vec2(0,1))-4.*h;
+float ca=caus(sb*.36,uT*.65)*(1.15-.75*dep)+max(-lap,0.)*10.;
+bt*=(.74+ca)*mix(vec3(1.),vec3(1.1,.85,.6),uFin);
+vec3 tr=exp(-dep*dep*vec3(4.4,1.75,1.05));
+col=bt*tr+mix(vec3(.01,.16,.28),vec3(.05,.1,.2),uFin)*(1.-tr);col*=1.+clamp(h*4.5,-.35,.6);
+vec2 so=-normalize(L.xy)*(.6+uFin*1.4);
+for(int i=0;i<3;i++){float ds=length(s-RK[i].xy-so*RK[i].z);col*=mix(.6,1.,smoothstep(RK[i].z*.9,RK[i].z*1.2,ds));}
+for(int i=0;i<4;i++){float dg=length(s-uB[i].xy);col+=vec3(1.,.55,.12)*exp(-dg*dg/60.)*uFin*uB[i].w*(.45+.15*sin(uT*5.+float(i)));}
+float F=.03+.97*pow(1.-max(dot(n,V),0.),5.);
+vec3 R=reflect(-V,n);R.z=abs(R.z);
+col=mix(col,sky(R,L),clamp(F*1.3,0.,.92));
+float sd=max(dot(R,L),0.);col+=SC*(pow(sd,300.)*3.2+pow(sd,40.)*.25*uFin);
+float fo=smoothstep(1.7,0.,sh+(noise(s*1.6+uT*.35)-.5)*1.5+sin(uT*1.4+s.x*.3+s.y*.2)*.3);col=mix(col,vec3(.96,.98,.99)*mix(vec3(1.),vec3(1.,.85,.7),uFin),fo*.6);
+vec3 TN=mix(vec3(1.),vec3(1.08,.84,.66),uFin*.7);
+for(int i=0;i<4;i++){vec2 q=s-uB[i].xy;float r=length(q);if(r<5.4){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
+float notch=smoothstep(.05,.2,abs(a-(float(i)*1.3-2.))-.02);
+float pad=smoothstep(4.7,4.45,r)*notch;
+vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/4.7)*(.65+.55*max(dot(n,L),0.))*TN;
+col=mix(col,pc,pad*.97);
+col=mix(col,vec3(1.,1.,.95),(1.-lit)*.95*smoothstep(.24,.06,abs(r-3.9))*step(.45,fract(a*3.82)));
+float ro=1.15+2.65*w,l1=.5+.5*pow(abs(cos(a*4.)),.55),l2=.5+.5*pow(abs(sin(a*4.)),.55);
+float p1=smoothstep(ro*l1,ro*l1-.28,r);vec3 c1=mix(vec3(1.,.96,.95),vec3(.96,.5,.7),smoothstep(0.,ro,r))*(.82+.18*smoothstep(ro*l1,ro*l1*.6,r));
+col=mix(col,c1*TN,p1);
+float ri=ro*.63,p2=smoothstep(ri*l2,ri*l2-.22,r);vec3 c2=mix(vec3(1.),vec3(1.,.7,.82),smoothstep(0.,ri,r))*(.86+.14*smoothstep(ri*l2,ri*l2*.6,r));
+col=mix(col,c2*TN,p2);
+float cr=.3+.6*min(w,1.);col=mix(col,mix(vec3(.9,.62,.16),vec3(1.,.86,.32),lit),smoothstep(cr,cr-.18,r)*smoothstep(.2,.55,w));
+col+=vec3(.42,.26,.06)*lit*(.6+uFin)*smoothstep(4.2,0.,r)*(.75+.25*sin(uT*5.+float(i)));}}
+}
+float fd=length(s-60.);col=mix(col,sky(normalize(vec3(rd.xy,.02)),L),smoothstep(110.,700.,fd)*uTilt);}
+vec3 Hh=normalize(L+V);
+for(int i=0;i<3;i++){vec3 c=vec3(RK[i].xy,-RK[i].z*.3);float ts=sph(ro,rd,c,RK[i].z*1.05);if(ts>0.&&ts<tHit){tHit=ts;vec3 q=ro+rd*ts;vec2 s=q.xy;
+vec3 n=normalize(normalize(q-c)+vec3((noise(s*1.7)-.5)*.5,(noise(s*1.7+4.)-.5)*.5,0.));
+vec3 base=vec3(.56,.55,.52)*(.72+.5*fbm(s*.9+float(i)*3.));base=mix(base,vec3(.3,.36,.22),smoothstep(.55,.8,fbm(s*.7+2.))*.5);
+col=base*(.3+.9*max(dot(n,L),0.))*mix(vec3(1.),vec3(1.15,.8,.55),uFin)+SC*pow(max(dot(n,Hh),0.),30.)*.12;col*=mix(.55,1.,smoothstep(0.,2.,q.z));}}
+col*=1.-uFin*.35*smoothstep(.5,1.4,length(p));
+o=vec4(col,1.);}
+</script>
+<script>
+const N=120,STEPS=760,DAMP=0.9982;
+const ROCKS=[[44,60,7],[80,44,6],[72,86,8]];
+const BUOYS=[[24,50],[90,24],[40,98],[100,78]];
+const blk=new Uint8Array(N*N),land=new Uint8Array(N*N),dep=new Float32Array(N*N),c2=new Float32Array(N*N);
+for(let y=0;y<N;y++)for(let x=0;x<N;x++){const i=y*N+x;
+const e=((x-60)/56)**2+((y-60)/53)**2;
+const cove=(x-64)**2+(y-122)**2<24*24, cape=(x+4)**2+(y-14)**2<26*26;
+if(e>=1||cove||cape||x<1||y<1||x>N-2||y>N-2){blk[i]=1;land[i]=1;continue}
+for(const[rx,ry,rr]of ROCKS)if((x-rx)**2+(y-ry)**2<rr*rr)blk[i]=1;
+let d=Math.min(1,(1-e)*2.6);
+d-=0.75*Math.exp(-((x-60)**2+(y-30)**2)/260);
+d-=0.7*Math.exp(-((x-92)**2+(y-66)**2)/180);
+d-=0.6*Math.exp(-((x-26)**2+(y-80)**2)/200);
+d=Math.max(0.1,Math.min(1,d));dep[i]=d;c2[i]=0.25*(0.22+0.78*d)}
+let U=new Float32Array(N*N),P=new Float32Array(N*N),Q=new Float32Array(N*N),MX=BUOYS.map(()=>0),STEP=0;
+function simReset(){U.fill(0);P.fill(0);Q.fill(0);MX=BUOYS.map(()=>0);STEP=0}
+function simDrop(dx,dy){for(let y=-7;y<=7;y++)for(let x=-7;x<=7;x++){const X=dx+x,Y=dy+y;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-Math.exp(-(x*x+y*y)/7);U[Y*N+X]=v;P[Y*N+X]=v}}
+function simTick(){for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++){const i=y*N+x;if(blk[i])continue;const c=U[i];
+const l=blk[i-1]?c:U[i-1],r=blk[i+1]?c:U[i+1],t=blk[i-N]?c:U[i-N],d=blk[i+N]?c:U[i+N];
+Q[i]=(2*c-P[i]+c2[i]*(l+r+t+d-4*c))*DAMP}
+const q=P;P=U;U=Q;Q=q;STEP++;
+for(let k=0;k<BUOYS.length;k++){const v=Math.abs(U[BUOYS[k][1]*N+BUOYS[k][0]]);if(v>MX[k])MX[k]=v}}
+function canDrop(x,y){if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x])return 0;for(const[bx,by]of BUOYS)if(Math.hypot(bx-x,by-y)<16)return 0;return 1}
+const T=0.068,HINT=[60,27,15],BEST=[63,30];
+const stage=document.getElementById('stage'),glc=document.getElementById('gl'),ov=document.getElementById('ov'),g=ov.getContext('2d'),finEl=document.getElementById('fin');
+const gl=glc.getContext('webgl2',{antialias:false});
+const say=t=>document.getElementById('msg').textContent=t;
+let state='idle',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
+let camK=0,camGoal=0,theta=0,finT=0,ringT=0,tscale=1,fin=0,disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[];
+function resize(){const css=Math.max(260,Math.min(innerWidth-24,innerHeight-140,900)),dpr=Math.min(devicePixelRatio||1,2);stage.style.width=stage.style.height=css+'px';size=Math.round(css*dpr);glc.width=glc.height=ov.width=ov.height=size;if(gl)gl.viewport(0,0,size,size)}
+addEventListener('resize',resize);resize();
+let prog,U_={},tex;
+if(!gl){say('Цей браузер не підтримує WebGL2, тому воду показати не можна.')}else{
+const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s};
+prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,'#version 300 es\nout vec2 v;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2))*2.-1.;v=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}'));
+gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,document.getElementById('fs').textContent));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
+for(const n of['uT','uB','uF','uTilt','uFin','uCP','uCT','uUp'])U_[n]=gl.getUniformLocation(prog,n);
+tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texStorage2D(gl.TEXTURE_2D,1,gl.R16F,N,N);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.bindVertexArray(gl.createVertexArray())}
+function idleText(){say('Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі 4 до пунктирної межі.')}
+function reset(){simReset();state='idle';splash=null;wasLit=[0,0,0,0];bursts=[];litOrder=[];camGoal=0;tscale=1;stage.classList.remove('fin');finEl.classList.remove('on');idleText();if(hintLv)showHint()}
+function showHint(){if(hintLv===1)say('Підказка 1: світле дно — це мілина. Вона збирає хвилю, як лінза. Спробуйте кинути краплю над мілиною.');
+if(hintLv===2)say('Підказка 2: шукайте місце всередині жовтого кола.');
+if(hintLv>=3)say('Підказка 3: точне місце позначено жовтою цяткою.')}
+function hint(){if(hintLv<3)hintLv++;if(state!=='idle')reset();else showHint()}
+function drop(x,y){simDrop(x,y);state='run';tries++;document.getElementById('tries').textContent=tries;marks.push([x,y]);splash={x,y,t:0};say('Хвиля йде…')}
+function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
+function win(){for(let n=0;n<4;n++)win['b'+n]=0;win.b3=1;state='win';finT=0;ringT=-1;theta=0;
+document.getElementById('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;
+say('Хвиля підняла всі 4 латаття до межі, і вони розкрилися. Натисніть R, щоб зіграти ще раз.')}
+function overlay(){const K=size/N,px=size/600;g.clearRect(0,0,size,size);ov.style.opacity=camK<0.02?1:0;if(camK>=0.02)return;
+g.lineWidth=1.5*px;g.strokeStyle='rgba(255,255,255,.55)';for(const[x,y]of marks){const a=(x+.5)*K,b=(y+.5)*K,r=4*px;g.beginPath();g.moveTo(a-r,b-r);g.lineTo(a+r,b+r);g.moveTo(a+r,b-r);g.lineTo(a-r,b+r);g.stroke()}
+if(hintLv>=2&&state==='idle'){g.strokeStyle='rgba(250,199,117,.95)';g.lineWidth=2.5*px;g.setLineDash([8*px,6*px]);g.beginPath();g.arc(HINT[0]*K,HINT[1]*K,HINT[2]*K,0,7);g.stroke();g.setLineDash([])}
+if(hintLv>=3&&state==='idle'){g.fillStyle='#FAC775';g.beginPath();g.arc((BEST[0]+.5)*K,(BEST[1]+.5)*K,5*px,0,7);g.fill();g.strokeStyle='#412402';g.lineWidth=1.5*px;g.stroke()}
+if(splash&&splash.t<1){const a=splash.t;g.strokeStyle='rgba(255,255,255,'+(0.9*(1-a))+')';g.lineWidth=(3*(1-a)+1)*px;g.beginPath();g.arc((splash.x+.5)*K,(splash.y+.5)*K,(6+a*30)*px,0,7);g.stroke()}
+if(state==='idle')for(const[x,y]of BUOYS){g.setLineDash([3*px,7*px]);g.strokeStyle='rgba(255,255,255,.35)';g.lineWidth=1*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,16*K,0,7);g.stroke();g.setLineDash([])}
+for(const b of bursts){if(b.t<0||b.t>=1)continue;const a=b.t;g.strokeStyle='rgba(255,214,120,'+(0.95*(1-a))+')';g.lineWidth=(5*(1-a)+1)*px;g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(4+a*13)*K,0,7);g.stroke();
+g.fillStyle='rgba(255,236,180,'+(0.35*(1-a)*(1-a))+')';g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(3+a*6)*K,0,7);g.fill()}}
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+function camera(now){const k=ease(camK),el=(90-68*k)*Math.PI/180,d=Math.exp(Math.log(600)*(1-k)+Math.log(104)*k),ex=60+12*k,th=theta*Math.min(1,k*3);
+const tg=[60,60-3*k,0],cp=[tg[0]+d*Math.cos(el)*Math.sin(th),tg[1]+d*Math.cos(el)*Math.cos(th),d*Math.sin(el)];
+const w=Math.min(1,k*5),up=[0,-(1-w),w],ul=Math.hypot(up[1],up[2]);
+gl.uniform3f(U_.uCP,cp[0],cp[1],cp[2]);gl.uniform3f(U_.uCT,tg[0],tg[1],tg[2]);gl.uniform3f(U_.uUp,0,up[1]/ul,up[2]/ul);gl.uniform1f(U_.uF,d/ex);gl.uniform1f(U_.uTilt,Math.min(1,k*1.5));gl.uniform1f(U_.uFin,fin)}
+function frame(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
+camK+=Math.sign(camGoal-camK)*Math.min(Math.abs(camGoal-camK),dt/(camGoal?2.8:0.7));
+fin+=Math.sign(camGoal-fin)*Math.min(Math.abs(camGoal-fin),dt/(camGoal?2.2:0.6));
+for(const b of bursts)b.t+=dt*(state==='win'?1.1:1.6);
+BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLit[k]=now;litOrder.push(k);bursts.push({x,y,t:0})}
+const pop=wasLit[k]?0.22*Math.exp(-(now-wasLit[k])/260):0;disp[k]+=((f>=1?1:Math.pow(f,2.4)*0.9)-disp[k])*Math.min(1,dt*7);disp[k]=Math.max(0,disp[k]);BUOYS[k].show=disp[k]+pop});
+if(state==='win'){finT+=dt;if(finT>1.5&&!camGoal){camGoal=1;stage.classList.add('fin')}if(camGoal)theta+=dt*0.11;tscale=finT<0.3?1-finT/0.3*0.86:finT<3.8?0.14:Math.min(0.55,0.14+(finT-3.8)*0.25);
+if(finT<1.4){const n=Math.floor(finT/0.3);if(n<4&&!win['b'+n]){win['b'+n]=1;const b=BUOYS[litOrder[n]??n];bursts.push({x:b[0],y:b[1],t:0})}}
+if(ringT<0&&finT>1.7){BUOYS.forEach(([x,y])=>ring(x,y,0.5));ringT=finT}
+if(ringT>0&&finT-ringT>2.4){const b=BUOYS[Math.floor(Math.random()*4)];ring(b[0],b[1],0.4);ringT=finT}
+if(finT>3)finEl.classList.add('on');
+acc+=dt*180*tscale;while(acc>=1){simTick();acc-=1}}
+else if(state==='run'){acc+=dt*180;while(acc>=1&&STEP<STEPS){simTick();acc-=1}if(acc>3)acc=0;const lit=MX.filter(v=>v>=T).length;
+if(lit===4)win();
+else if(STEP>=STEPS){state='done';say('Розкрилося '+lit+' з 4. До решти хвиля дійшла заслабка: пелюстки не доросли до пунктирної межі. Натисніть R, щоб спробувати ще раз.')}}
+else if(state==='done'&&STEP<STEPS*3){simTick();simTick();simTick()}
+if(splash)splash.t+=dt*2;
+if(gl){gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,N,N,gl.RED,gl.FLOAT,U);gl.uniform1f(U_.uT,now/1000);
+const b=new Float32Array(16);BUOYS.forEach(([x,y],k)=>{const u=U[y*N+x];b[k*4]=x+.5;b[k*4+1]=y+.5;b[k*4+2]=BUOYS[k].show||0;b[k*4+3]=MX[k]>=T?1:0});
+gl.uniform4fv(U_.uB,b);camera(now);gl.drawArrays(gl.TRIANGLES,0,3)}
+overlay();requestAnimationFrame(frame)}
+stage.addEventListener('pointerdown',e=>{if(state!=='idle'||camK>0.01)return;const r=stage.getBoundingClientRect(),x=Math.floor((e.clientX-r.left)/r.width*N),y=Math.floor((e.clientY-r.top)/r.height*N);
+if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x]){say('Сюди кинути не можна. Киньте краплю у воду.');return}
+if(!canDrop(x,y)){say('Занадто близько до латаття. Киньте далі від пунктирного кола.');return}drop(x,y)});
+document.getElementById('again').onclick=reset;document.getElementById('hint').onclick=hint;
+addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}});
+window.__test={drop:(x,y)=>{reset();camK=0;fin=0;drop(x,y)},state:()=>[state,STEP,+camK.toFixed(2),+finT.toFixed(1)],skip:s=>{finT+=s;camGoal=1;camK=1;fin=1;stage.classList.add('fin');theta+=s*0.11;for(let i=0;i<s*40;i++)simTick()}};
+reset();requestAnimationFrame(frame);
+</script></body></html>

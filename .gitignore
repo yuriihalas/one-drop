@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Dependencies (none yet; here for when a build step appears)
+node_modules/
+
+# Logs
+*.log
+
+# Local captures: test recordings and screenshots stay out of the history
+captures/
