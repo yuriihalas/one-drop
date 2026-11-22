@@ -50,14 +50,14 @@ kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;paddi
 precision highp float;
 in vec2 v;out vec4 o;
 uniform sampler2D uH;uniform float uT,uF,uTilt,uFin,uBase;uniform vec3 uCP,uCT,uUp;
-uniform vec4 uPond,uB[4],uBar[3];uniform vec3 uLand[2],uRock[3];uniform float uLt[4];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];
+uniform vec4 uPond,uB[4],uBar[4];uniform vec3 uLand[2],uRock[3];uniform float uLt[4];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];
 const float N=120.;
 float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+7.1;a*=.5;}return s;}
 float H(vec2 s){return texture(uH,s/N).r;}
 float ell(vec2 s){vec2 q=(s-uPond.xy)/uPond.zw;return dot(q,q);}
-float depthAt(vec2 s){float d=min(1.,(1.-ell(s))*uBase);for(int i=0;i<3;i++){vec2 q=s-uBar[i].xy;d-=uBar[i].z*exp(-dot(q,q)/uBar[i].w);}return clamp(d,.1,1.);}
+float depthAt(vec2 s){float d=min(1.,(1.-ell(s))*uBase);for(int i=0;i<4;i++){vec2 q=s-uBar[i].xy;d-=uBar[i].z*exp(-dot(q,q)/uBar[i].w);}return clamp(d,.1,2.);}
 float shore(vec2 s){float r=(1.-sqrt(ell(s)))*min(uPond.z,uPond.w);for(int i=0;i<2;i++)r=min(r,length(s-uLand[i].xy)-uLand[i].z);return r;}
 float segd(vec2 p,vec4 a){vec2 d=a.zw-a.xy,q=p-a.xy;float t=clamp(dot(q,d)/max(dot(d,d),1e-4),0.,1.);return length(q-d*t);}
 float wallD(vec2 s){return min(min(segd(s,uWall[0]),segd(s,uWall[1])),min(segd(s,uWall[2]),segd(s,uWall[3])))-uWallW;}
@@ -98,7 +98,7 @@ float lap=H(s+vec2(1,0))+H(s-vec2(1,0))+H(s+vec2(0,1))+H(s-vec2(0,1))-4.*h;
 float ca=caus(sb*.36,uT*.65)*(1.15-.75*dep)+max(-lap,0.)*10.;
 bt*=(.74+ca)*mix(vec3(1.),vec3(1.1,.85,.6),uFin);
 vec3 tr=exp(-dep*dep*vec3(4.4,1.75,1.05));
-col=bt*tr+mix(vec3(.01,.16,.28),vec3(.05,.1,.2),uFin)*(1.-tr);col*=1.+clamp(h*6.5,-.4,.7);
+col=bt*tr+mix(vec3(.01,.16,.28),vec3(.05,.1,.2),uFin)*(1.-tr);col=mix(col,vec3(0.,.02,.07),smoothstep(1.03,1.85,dep)*.82);col*=1.+clamp(h*6.5,-.4,.7);
 col+=mix(vec3(.85,.95,1.),vec3(1.,.85,.6),uFin)*smoothstep(.02,.09,h)*.32;
 vec2 so=-normalize(L.xy)*(.6+uFin*1.4);
 col*=mix(.6,1.,smoothstep(-.3,1.5,wallD(s-so*2.5)));
@@ -160,7 +160,7 @@ if(out){blk[i]=1;dep[i]=0;c2[i]=0;dmp[i]=0;continue}
 for(const[rx2,ry2,rr]of L.rocks||[])if((x-rx2)**2+(y-ry2)**2<rr*rr)blk[i]=1;
 for(const w of L.walls||[])if(segd(x,y,w)<w[4])blk[i]=1;
 let d=Math.min(1,(1-e)*L.base);for(const[bx,by,ba,bw]of L.bars||[])d-=ba*Math.exp(-((x-bx)**2+(y-by)**2)/bw);
-d=Math.max(0.1,Math.min(1,d));dep[i]=d;c2[i]=0.25*(0.22+0.78*d);
+d=Math.max(0.1,Math.min(2,d));dep[i]=d;c2[i]=0.25*(0.22+0.78*d);
 let a=0;if(L.reeds&&sh<RB)a=0.5*((RB-sh)/RB)**2;
 for(const[wx,wy,wr]of L.weeds||[]){const dd=Math.hypot(x-wx,y-wy);if(dd<wr)a=Math.max(a,0.05*Math.min(1,(wr-dd)/3))}
 dmp[i]=1-a}
@@ -197,7 +197,17 @@ const LEVELS=[
 {name:'Коліно',lesson:'Канал повертає за ріг. Хвиля поверне разом із ним.',pond:[60,60,55,52],reeds:1,base:30,walls:[[30,30,94,30,2.2],[30,44,80,44,2.2],[94,30,94,98,2.2],[80,44,80,98,2.2]],lilies:[[87,90],[36,80]],T:0.035,hint:[27,45,13],best:[23,41]},
 {name:'Еліпс і ряска',lesson:'Прямий шлях закрила ряска. Але кам\u2019яні береги довгого ставка все одно зберуть хвилю в одну точку. Це латаття велике: щоб розкрити його до межі, потрібна дуже висока хвиля, і зблизька однієї краплі не вистачить.',pond:[60,60,38,56],base:30,weeds:[[60,60,11]],lilies:[[60,101]],T:0.155,hint:[63,24,13],best:[59,20]},
 {name:'Щедрик і скеля',lesson:'Скеля стоїть на шляху до однієї з нот. Хвиля обійде її, але дорога в обхід довша, і нота прозвучить пізніше.',pond:[60,60,54,50],reeds:1,base:30,rocks:[[58,60,12]],lilies:[[38,60],[55,28],[76,52],[91,82]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:10},hint:[25,64,13],best:[21,60]},
-{name:'Плесо',lesson:'Останній ставок. Кам\u2019яні береги й острови відбивають хвилю, мілини її повертають, ряска гасить. Простого місця тут немає: шукайте, де хвилі складуться.',pond:[60,60,56,54],base:2.6,lands:[[120,20,26],[10,118,24]],rocks:[[46,56,8],[80,70,7]],walls:[[60,6,60,34,2.2],[30,84,56,84,2.2]],bars:[[90,44,.8,220],[40,100,.7,180]],weeds:[[72,96,9]],lilies:[[30,36],[90,44],[40,100],[98,90]],T:0.0545,hint:[51,67,13],best:[47,71]}];
+{name:'Плесо',lesson:'Останній ставок. Кам\u2019яні береги й острови відбивають хвилю, мілини її повертають, ряска гасить. Простого місця тут немає: шукайте, де хвилі складуться.',pond:[60,60,56,54],base:2.6,lands:[[120,20,26],[10,118,24]],rocks:[[46,56,8],[80,70,7]],walls:[[60,6,60,34,2.2],[30,84,56,84,2.2]],bars:[[90,44,.8,220],[40,100,.7,180]],weeds:[[72,96,9]],lilies:[[30,36],[90,44],[40,100],[98,90]],T:0.0545,hint:[51,67,13],best:[47,71]},
+{name:'Брате Якове',lesson:'Темна вода — це глибока яма. Над нею хвиля біжить швидше, тож нота за ямою прозвучить раніше, ніж здається. Мелодія: «Брате Якове».',pond:[60,60,54,50],reeds:1,base:30,bars:[[62,60,-1,260]],lilies:[[40,60],[43,35],[76,60],[84,85]],T:0.012,tune:{title:'«Брате Якове»',f:[261.63,293.66,329.63,261.63],on:[0,1,2,3],unit:30,tol:13},hint:[17,59,13],best:[13,63]},
+{name:'Подвійна лінза',lesson:'Дві мілини одна за одною: перша збирає хвилю, друга передає її далі.',pond:[60,60,56,40],reeds:1,base:30,bars:[[44,60,.9,150],[78,60,.9,150]],lilies:[[100,60],[26,36]],T:0.0639,hint:[30,60,13],best:[26,56]},
+{name:'Зіронька',lesson:'Початок «Мерехти, зіронько»: дві червоні ноти, потім дві сині. Сині сховані за стіною, а за щілиною ще й глибока яма.',pond:[60,60,54,50],reeds:1,base:30,walls:[[60,4,60,50,2.2],[60,70,60,116,2.2]],bars:[[84,60,-1,240]],lilies:[[42,60],[41,33],[70,50],[90,60]],T:0.012,tune:{title:'«Мерехти, зіронько»',f:[261.63,261.63,392,392],on:[0,1,2,3],unit:30,tol:11},hint:[30,63,13],best:[26,59]},
+{name:'Лабіринт',lesson:'Три стіни ділять ставок на коридори. Хвиля пройде всіма, якщо почати з правильного кінця.',pond:[60,60,55,53],reeds:1,base:30,walls:[[20,40,84,40,2.2],[36,60,104,60,2.2],[20,80,84,80,2.2]],lilies:[[30,50],[94,70],[30,92]],T:0.0161,hint:[18,76,13],best:[14,80]},
+{name:'Кам\u2019яна чаша',lesson:'Круглий кам\u2019яний ставок без очерету. Усе, що дійшло до берега, повертається назад.',pond:[60,60,52,52],base:30,lilies:[[60,30],[34,76],[86,76]],T:0.0981,hint:[57,85,13],best:[53,89]},
+{name:'Щедрик і дві води',lesson:'Одна нота стоїть за мілиною, інша за ямою: перша запізниться, друга поспішить.',pond:[60,60,54,50],reeds:1,base:30,bars:[[56,38,.9,200],[62,80,-1,240]],lilies:[[40,60],[54,34],[86,80],[98,54]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:10},hint:[26,63,13],best:[22,59]},
+{name:'Острови',lesson:'Два острови, скеля і ряска. Кам\u2019яні береги островів теж відбивають хвилю.',pond:[60,60,56,54],base:30,lands:[[44,50,10],[80,72,11]],rocks:[[70,36,6]],weeds:[[40,86,9]],lilies:[[24,56],[60,22],[100,60],[62,98]],T:0.0787,hint:[21,67,13],best:[17,71]},
+{name:'Хребет',lesson:'Під водою тягнеться довгий мілкий хребет. Хвиля тримається мілини й біжить уздовж неї, як у каналі.',pond:[60,60,56,50],reeds:1,base:30,bars:[[40,60,.85,90],[56,60,.85,90],[72,60,.85,90],[88,60,.85,90]],lilies:[[98,60],[40,30],[40,90]],T:0.0633,hint:[18,63,13],best:[14,59]},
+{name:'З днем народження',lesson:'Чотири ноти, і дві перші звучать майже разом. На шляху стоять скеля і яма.',pond:[60,60,54,50],reeds:1,base:30,rocks:[[60,44,9]],bars:[[64,78,-1,240]],lilies:[[40,60],[41,38],[54,74],[69,49]],T:0.012,tune:{title:'«З днем народження»',f:[392,392,440,392],on:[0,0.75,1,2],unit:32,tol:9},hint:[25,56,13],best:[21,60]},
+{name:'Велике плесо',lesson:'Найбільший ставок: острів, скелі, стіни, мілина, яма і ряска. Одна крапля, чотири латаття.',pond:[60,60,56,55],base:2.6,lands:[[60,60,9]],rocks:[[34,40,7],[88,84,7]],walls:[[60,74,60,110,2.2],[84,30,108,44,2.2]],bars:[[90,56,.8,200],[30,84,-1,220]],weeds:[[50,26,9]],lilies:[[22,60],[72,20],[100,66],[44,100]],T:0.0533,hint:[36,36,13],best:[32,32]}];
 const $=id=>document.getElementById(id);
 const stage=$('stage'),glc=$('gl'),ov=$('ov'),g=ov.getContext('2d'),finEl=$('fin'),card=$('card');
 const gl=glc.getContext('webgl2',{antialias:false});
@@ -209,7 +219,7 @@ let disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[],closing=false;
 let specks=[];
 function seed(){specks=[];let g2=0;while(specks.length<150&&g2++<4000){const x=2+Math.random()*(N-4),y=2+Math.random()*(N-4);if(!blk[(y|0)*N+(x|0)])specks.push({x,y,hx:x,hy:y})}}
 let hover=null,isDown=false,tt=null,ttKey='',lastRes=null,stars=0,lastJ=null;
-const PITCH={466.16:'#ff8fc0',440:'#ffd95a',392:'#6fc3ff',311.13:'#c79bff',329.63:'#8fe08a',349.23:'#ffab5e'};
+const PITCH={466.16:'#ff8fc0',440:'#ffd95a',392:'#6fc3ff',311.13:'#c79bff',261.63:'#ff7b6b',293.66:'#5fe0d0',329.63:'#8fe08a',349.23:'#ffab5e'};
 function note(f,t0){tone(f,t0||0,1.2,0.13);tone(f*2,t0||0,0.6,0.03)}
 function listen(){const t=LEVELS[lvI].tune;if(!t)return;t.f.forEach((f,i)=>note(f,t.on[i]*t.unit/SPEED))}
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
@@ -238,7 +248,7 @@ function setLevel(i){lvI=i;const L=LEVELS[i];buildLevel(L);T=L.T;tries=0;marks=[
 paintLv();$('lvname').textContent=(i+1)+'. '+L.name;
 if(gl){gl.uniform4f(U_.uPond,...L.pond);const ld=new Float32Array([-999,-999,0,-999,-999,0]);(L.lands||[]).forEach((a,k)=>ld.set(a,k*3));gl.uniform3fv(U_.uLand,ld);
 const rk=new Float32Array([-999,-999,0,-999,-999,0,-999,-999,0]);(L.rocks||[]).forEach((a,k)=>rk.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uRock,rk);
-const br=new Float32Array([0,0,0,1,0,0,0,1,0,0,0,1]);(L.bars||[]).forEach((a,k)=>br.set(a,k*4));gl.uniform4fv(U_.uBar,br);gl.uniform1f(U_.uBase,L.base);
+const br=new Float32Array([0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1]);(L.bars||[]).forEach((a,k)=>br.set(a,k*4));gl.uniform4fv(U_.uBar,br);gl.uniform1f(U_.uBase,L.base);
 gl.uniform1f(U_.uReed,L.reeds?1:0);gl.uniform1f(U_.uNeed,2.2+3.4*Math.sqrt(L.T/0.18));const wd=new Float32Array([-999,-999,0,-999,-999,0]);(L.weeds||[]).forEach((a,k)=>wd.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uWeed,wd);
 const wl=new Float32Array(16).fill(-999);(L.walls||[]).forEach((a,k)=>wl.set([a[0]+.5,a[1]+.5,a[2]+.5,a[3]+.5],k*4));gl.uniform4fv(U_.uWall,wl);gl.uniform1f(U_.uWallW,L.walls?L.walls[0][4]:1)}
 $('listen').style.display=$('clisten').style.display=L.tune?'inline-block':'none';
