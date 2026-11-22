@@ -33,7 +33,7 @@ html,body{margin:0;height:100%;background:#0d1b22;color:#e8eef0;font-family:syst
 button{font:inherit;font-size:14px;color:#e8eef0;background:#1c3642;border:1px solid #37596a;border-radius:10px;padding:9px 14px;cursor:pointer;white-space:nowrap}
 button:hover{background:#25485a}
 button.go{background:#2f8f6f;border-color:#63c9a4;color:#fff}
-#next{display:none}
+#next,#listen,#clisten{display:none}
 kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;padding:0 5px;margin-left:6px;color:#a9c3ce}
 #sub{font-size:13px;color:#8fa6af;margin-top:6px;width:100%;max-width:900px}
 #snd{color:#a9c3ce}
@@ -42,8 +42,8 @@ kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;paddi
 </style></head><body><div id="wrap">
 <div id="top"><b id="lvname"></b><span id="lvs"></span></div>
 <div id="stage"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="barx" id="bt"></div><div class="barx" id="bb"></div><div id="rep">ПОВТОР</div><div id="fin"><b id="fint"></b><span id="fins"></span></div>
-<div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button class="go" id="cgo">Почати</button></div></div></div>
-<div id="bar"><div id="msg"></div><button id="hint">Підказка<kbd>H</kbd></button><button id="again">Ще раз<kbd>R</kbd></button><button id="next" class="go">Далі<kbd>N</kbd></button><button id="snd"></button></div>
+<div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button id="clisten">Послухати</button> <button class="go" id="cgo">Почати</button></div></div></div>
+<div id="bar"><div id="msg"></div><button id="listen">Мелодія<kbd>M</kbd></button><button id="hint">Підказка<kbd>H</kbd></button><button id="again">Ще раз<kbd>R</kbd></button><button id="next" class="go">Далі<kbd>N</kbd></button><button id="snd"></button></div>
 <div id="sub">Спроб: <span id="tries">0</span>. Кільця показують, куди піде хвиля: що блідіше кільце, то слабша хвиля. Цятки — ваші попередні кидки: що тепліший колір, то ближче було до перемоги.</div>
 </div>
 <script id="fs" type="x-shader/x-fragment">#version 300 es
@@ -150,7 +150,7 @@ o=vec4(col,1.);}
 //CORE>
 const N=120,STEPS=760,DAMP=0.9982,RB=10;
 const blk=new Uint8Array(N*N),dep=new Float32Array(N*N),c2=new Float32Array(N*N),dmp=new Float32Array(N*N),cE=new Float32Array(N*N),cS=new Float32Array(N*N);
-let LV=null,BUOYS=[],U=new Float32Array(N*N),P=new Float32Array(N*N),Q=new Float32Array(N*N),MX=[],STEP=0;
+let LV=null,BUOYS=[],U=new Float32Array(N*N),P=new Float32Array(N*N),Q=new Float32Array(N*N),MX=[],ARR=[],STEP=0;
 function segd(x,y,a){const dx=a[2]-a[0],dy=a[3]-a[1],t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(x-a[0]-dx*t,y-a[1]-dy*t)}
 function buildLevel(L){LV=L;BUOYS=L.lilies;blk.fill(0);const[cx,cy,rx,ry]=L.pond;
 for(let y=0;y<N;y++)for(let x=0;x<N;x++){const i=y*N+x;const e=((x-cx)/rx)**2+((y-cy)/ry)**2;let out=e>=1||x<1||y<1||x>N-2||y>N-2;
@@ -166,12 +166,15 @@ for(const[wx,wy,wr]of L.weeds||[]){const dd=Math.hypot(x-wx,y-wy);if(dd<wr)a=Mat
 dmp[i]=1-a}
 for(let i=0;i<N*N-N;i++){cE[i]=blk[i]||blk[i+1]?0:0.5*(c2[i]+c2[i+1]);cS[i]=blk[i]||blk[i+N]?0:0.5*(c2[i]+c2[i+N])}
 simReset()}
-function simReset(){U.fill(0);P.fill(0);Q.fill(0);MX=BUOYS.map(()=>0);STEP=0}
+function simReset(){U.fill(0);P.fill(0);Q.fill(0);MX=BUOYS.map(()=>0);ARR=BUOYS.map(()=>0);STEP=0}
 function simDrop(dx,dy){for(let y=-7;y<=7;y++)for(let x=-7;x<=7;x++){const X=dx+x,Y=dy+y;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-Math.exp(-(x*x+y*y)/7);U[Y*N+X]=v;P[Y*N+X]=v}}
 function simTick(){for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++){const i=y*N+x;if(blk[i])continue;const c=U[i];
 Q[i]=(c+(c-P[i])*dmp[i]+cE[i]*(U[i+1]-c)+cE[i-1]*(U[i-1]-c)+cS[i]*(U[i+N]-c)+cS[i-N]*(U[i-N]-c))*DAMP}
 const q=P;P=U;U=Q;Q=q;STEP++;
-for(let k=0;k<BUOYS.length;k++){const v=Math.abs(U[BUOYS[k][1]*N+BUOYS[k][0]]);if(v>MX[k])MX[k]=v}}
+for(let k=0;k<BUOYS.length;k++){const v=Math.abs(U[BUOYS[k][1]*N+BUOYS[k][0]]);if(v>MX[k])MX[k]=v;if(!ARR[k]&&v>=LV.T)ARR[k]=STEP}}
+function judge(){const t=LV.tune,n=BUOYS.length;if(ARR.some(a=>!a))return{ok:0,err:999,ord:[]};const ord=BUOYS.map((_,k)=>k).sort((a,b)=>ARR[a]-ARR[b]);let ok=1,err=0;
+for(let i=0;i<n;i++){if(t.f[ord[i]]!==t.f[i])ok=0;if(i){if(ARR[ord[i]]-ARR[ord[i-1]]<5)ok=0;err=Math.max(err,Math.abs(ARR[ord[i]]-ARR[ord[0]]-t.on[i]*t.unit))}}
+if(err>t.tol)ok=0;return{ok,err,ord}}
 function canDrop(x,y){if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x])return 0;for(const[bx,by]of BUOYS)if(Math.hypot(bx-x,by-y)<16)return 0;return 1}
 //<CORE
 const LEVELS=[
@@ -183,7 +186,8 @@ const LEVELS=[
 {name:'Ряска',lesson:'Ряска на поверхні гасить хвилю. Знайдіть місце, звідки хвиля обійде зелену пляму.',pond:[60,60,55,50],reeds:1,base:30,weeds:[[60,60,14]],lilies:[[28,60],[92,60]],T:0.0622,hint:[63,39,13],best:[59,35]},
 {name:'Відбиття',lesson:'Очерет хвилю гасив, а кам’яний берег її відбиває. У довгому ставку відбиті хвилі знову сходяться в одній точці на іншому кінці.',pond:[60,60,56,36],base:30,lilies:[[103,60]],T:0.181,hint:[21,63,13],best:[17,59]},
 {name:'Лінза',lesson:'Над мілиною хвиля завертає, як світло в лінзі. Кругла мілина збирає хвилю в одну точку за собою.',pond:[60,60,54,56],reeds:1,base:30,bars:[[60,58,.9,200]],lilies:[[60,20],[60,92]],T:0.0574,hint:[63,42,13],best:[59,38]},
-{name:'Ставок',lesson:'Тепер усе разом: відстань, каміння, мілини, ряска і кам’яні береги. Одна крапля, чотири латаття.',pond:[60,60,56,53],base:2.6,lands:[[64,122,24],[-4,14,26]],rocks:[[44,60,7],[80,44,6],[72,86,8]],bars:[[60,30,.75,260],[92,66,.7,180],[26,80,.6,200]],weeds:[[52,84,8]],lilies:[[24,50],[90,24],[40,98],[100,78]],T:0.0536,hint:[33,36,13],best:[29,32]}];
+{name:'Ставок',lesson:'Тепер усе разом: відстань, каміння, мілини, ряска і кам’яні береги. Одна крапля, чотири латаття.',pond:[60,60,56,53],base:2.6,lands:[[64,122,24],[-4,14,26]],rocks:[[44,60,7],[80,44,6],[72,86,8]],bars:[[60,30,.75,260],[92,66,.7,180],[26,80,.6,200]],weeds:[[52,84,8]],lilies:[[24,50],[90,24],[40,98],[100,78]],T:0.0536,hint:[33,36,13],best:[29,32]},
+{name:'Щедрик',lesson:'Кожне латаття — це нота, і хвиля грає їх по черзі. Знайдіть місце, звідки одна крапля зіграє «Щедрик»: рожева, жовта, знову рожева, синя. Кільця показують, куди хвиля дійде раніше.',pond:[60,60,54,50],reeds:1,base:30,lilies:[[40,60],[61,32],[79,87],[100,53]],T:0.012,tune:{f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:20},hint:[24,63,13],best:[20,59]}];
 const $=id=>document.getElementById(id);
 const stage=$('stage'),glc=$('gl'),ov=$('ov'),g=ov.getContext('2d'),finEl=$('fin'),card=$('card');
 const gl=glc.getContext('webgl2',{antialias:false});
@@ -192,7 +196,10 @@ const SPEED=150,LAST=LEVELS.length-1;
 let lvI=0,T=0.068,state='card',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
 let camK=0,camGoal=0,camDur=1.8,theta=0,finT=0,ringT=0,tscale=1,fin=0,finGoal=0,phase='',dropAt=null;
 let disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[],closing=false;
-let hover=null,isDown=false,tt=null,ttKey='',lastRes=null;
+let hover=null,isDown=false,tt=null,ttKey='',lastRes=null,stars=0,lastJ=null;
+const PITCH={466.16:'#ff8fc0',440:'#ffd95a',392:'#6fc3ff'};
+function note(f,t0){tone(f,t0||0,1.2,0.13);tone(f*2,t0||0,0.6,0.03)}
+function listen(){const t=LEVELS[lvI].tune;if(!t)return;t.f.forEach((f,i)=>note(f,t.on[i]*t.unit/SPEED))}
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 let doneSet=new Set((store.get('pleso-done')||'').split(',').filter(Boolean).map(Number));
 let muted=store.get('pleso-mute')==='1',AC=null;
@@ -222,10 +229,11 @@ const rk=new Float32Array([-999,-999,0,-999,-999,0,-999,-999,0]);(L.rocks||[]).f
 const br=new Float32Array([0,0,0,1,0,0,0,1,0,0,0,1]);(L.bars||[]).forEach((a,k)=>br.set(a,k*4));gl.uniform4fv(U_.uBar,br);gl.uniform1f(U_.uBase,L.base);
 gl.uniform1f(U_.uReed,L.reeds?1:0);const wd=new Float32Array([-999,-999,0,-999,-999,0]);(L.weeds||[]).forEach((a,k)=>wd.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uWeed,wd);
 const wl=new Float32Array(8).fill(-999);(L.walls||[]).forEach((a,k)=>wl.set([a[0]+.5,a[1]+.5,a[2]+.5,a[3]+.5],k*4));gl.uniform4fv(U_.uWall,wl);gl.uniform1f(U_.uWallW,L.walls?L.walls[0][4]:1)}
+$('listen').style.display=$('clisten').style.display=L.tune?'inline-block':'none';
 reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
 function begin(){if(state!=='card')return;card.classList.remove('on');state='idle';idleText()}
-function idleText(){say(lvI===0&&!tries?'Торкніться води біля латаття: упаде крапля, і хвиля його розкриє.':'Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
-function reset(){simReset();if(state!=='card')state='idle';splash=null;wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;
+function idleText(){if(LEVELS[lvI].tune){say('Знайдіть місце, звідки хвиля торкнеться латать у порядку мелодії: спершу рожеве, потім жовте, рожеве, синє.');return}say(lvI===0&&!tries?'Торкніться води біля латаття: упаде крапля, і хвиля його розкриє.':'Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
+function reset(){simReset();if(state!=='card')state='idle';splash=null;wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
 stage.classList.remove('fin');finEl.classList.remove('on');$('rep').classList.remove('on');$('next').style.display='none';if(state==='idle'){idleText();if(hintLv)showHint()}}
 function showHint(){if(hintLv===1)say('Підказка 1: '+LEVELS[lvI].lesson);
 if(hintLv===2)say('Підказка 2: шукайте місце всередині жовтого кола.');
@@ -233,12 +241,13 @@ if(hintLv>=3)say('Підказка 3: точне місце позначено �
 function hint(){if(state==='card')return;if(hintLv<3)hintLv++;if(state!=='idle')reset();showHint()}
 function drop(x,y){simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
 function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
-function score(){if(marks.length)marks[marks.length-1].s=Math.min(...MX)/T}
+function score(){if(!marks.length)return;const m=marks[marks.length-1];if(LV.tune){const j=judge();m.s=j.ok?1:Math.max(0.2,0.95-j.err/70)}else m.s=Math.min(...MX)/T}
 function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;score();doneSet.add(lvI);store.set('pleso-done',[...doneSet].join(','));paintLv();
 const n=BUOYS.length;$('fint').textContent=n===1?'Латаття розкрилося':n===2?'Обидва розкрилися':n===3?'Усі три розкрилися':'Усі чотири розкрилися';
 $('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;
-say('Хвиля підняла всі латаття до межі, і вони розкрилися.');$('next').style.display='inline-block';$('next').firstChild.textContent=lvI<LAST?'Далі':'З початку';
-[0,2,3].forEach((k,j)=>tone(NOTES[k]/2,0.25+j*0.09,1.6,0.07))}
+if(LV.tune){$('fint').textContent='Ставок зіграв «Щедрик»';$('fins').textContent='★'.repeat(stars)+'☆'.repeat(3-stars)+(stars===3?'  ритм точний':stars===2?'  ритм майже точний':'  порядок правильний, ритм ще можна вирівняти')}
+say(LV.tune?'Мелодія прозвучала правильно.':'Хвиля підняла всі латаття до межі, і вони розкрилися.');$('next').style.display='inline-block';$('next').firstChild.textContent=lvI<LAST?'Далі':'З початку';
+if(!LV.tune)[0,2,3].forEach((k,j)=>tone(NOTES[k]/2,0.25+j*0.09,1.6,0.07))}
 function next(){setLevel(lvI<LAST?lvI+1:0)}
 const DIRS=[];for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){if(!dx&&!dy)continue;const gcd=(a,b)=>b?gcd(b,a%b):a;if(gcd(Math.abs(dx),Math.abs(dy))!==1)continue;DIRS.push([dx,dy,Math.hypot(dx,dy)])}
 function travel(sx,sy){const d=new Float64Array(N*N).fill(1e9),hp=[],hk=[];const push=(i,k)=>{let n=hp.length;hp.push(i);hk.push(k);while(n>0){const p=(n-1)>>1;if(hk[p]<=k)break;hp[n]=hp[p];hk[n]=hk[p];n=p}hp[n]=i;hk[n]=k};
@@ -254,6 +263,12 @@ function label(t,x,y,px,col){g.font='600 '+Math.round(14*px)+'px system-ui,sans-
 function overlay(now){const K=size/N,px=size/600;g.clearRect(0,0,size,size);ov.style.opacity=camK<0.02?1:0;if(camK>=0.02)return;
 const L=LEVELS[lvI];
 for(const m of marks){const a=(m.x+.5)*K,b=(m.y+.5)*K;g.beginPath();g.arc(a,b,4.2*px,0,7);g.fillStyle=heat(m.s);g.fill();g.lineWidth=1.4*px;g.strokeStyle='rgba(8,24,32,.8)';g.stroke()}
+if(L.tune){const t=L.tune;BUOYS.forEach(([x,y],k)=>{g.strokeStyle=PITCH[t.f[k]];g.lineWidth=3*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,6.3*K,0,7);g.stroke()});
+const w=250*px,h=50*px,x0=(size-w)/2,y0=10*px,ux=42*px;g.fillStyle='rgba(8,24,32,.72)';g.beginPath();g.roundRect(x0,y0,w,h,10*px);g.fill();
+g.font=Math.round(11*px)+'px system-ui,sans-serif';g.textAlign='left';g.textBaseline='middle';g.fillStyle='#a9c3ce';g.fillText('треба',x0+10*px,y0+15*px);g.fillText('вийшло',x0+10*px,y0+35*px);
+t.f.forEach((f,i)=>{g.fillStyle=PITCH[f];g.beginPath();g.arc(x0+66*px+t.on[i]*ux,y0+15*px,5.5*px,0,7);g.fill()});
+const got=BUOYS.map((_,k)=>k).filter(k=>ARR[k]).sort((a,b)=>ARR[a]-ARR[b]);got.forEach(k=>{const u=(ARR[k]-ARR[got[0]])/t.unit;if(u>4.3)return;g.fillStyle=PITCH[t.f[k]];g.beginPath();g.arc(x0+66*px+u*ux,y0+35*px,5.5*px,0,7);g.fill()});
+if(state==='done'&&lastJ)lastJ.ord.forEach((k,i)=>label(String(i+1),(BUOYS[k][0]+.5)*K,(BUOYS[k][1]+.5)*K-9.5*K,px,PITCH[t.f[k]]))}
 if(hintLv>=2&&state==='idle'){g.strokeStyle='rgba(250,199,117,.95)';g.lineWidth=2.5*px;g.setLineDash([8*px,6*px]);g.beginPath();g.arc(L.hint[0]*K,L.hint[1]*K,L.hint[2]*K,0,7);g.stroke();g.setLineDash([])}
 if(hintLv>=3&&state==='idle'){g.fillStyle='#FAC775';g.beginPath();g.arc((L.best[0]+.5)*K,(L.best[1]+.5)*K,5*px,0,7);g.fill();g.strokeStyle='#412402';g.lineWidth=1.5*px;g.stroke()}
 if(state==='idle'){
@@ -279,7 +294,7 @@ function finale(dt,now){finT+=dt;
 if(phase==='A'){tscale=Math.max(0.14,1-finT/0.3*0.86);steps(dt);const n=Math.floor(finT/0.28);if(n>win.n&&win.n<BUOYS.length){const b=BUOYS[litOrder[win.n]??win.n];bursts.push({x:b[0],y:b[1],t:0});win.n++}
 if(finT>0.35+0.28*BUOYS.length){phase='B';finT=0;camGoal=1;camDur=1.9;finGoal=0.45;closing=lvI===LAST;stage.classList.add('fin')}}
 else if(phase==='B'){const f=Math.pow(0.02,dt);for(let i=0;i<N*N;i++){U[i]*=f;P[i]*=f}if(camGoal)theta+=dt*0.1;
-if(finT>2.1){if(lvI<LAST){phase='D';finT=0;finGoal=0.55}else{simReset();wasLit=[0,0,0,0];litOrder=[];closing=false;simDrop(dropAt[0],dropAt[1]);phase='C';finT=0;tscale=0.5;$('rep').classList.add('on')}}}
+if(finT>2.1){if(lvI<LAST){phase='D';finT=0;finGoal=0.55}else{simReset();wasLit=[0,0,0,0];litOrder=[];closing=false;simDrop(dropAt[0],dropAt[1]);phase='C';finT=0;tscale=LV.tune?1:0.5;$('rep').classList.add('on')}}}
 else if(phase==='C'){theta+=dt*0.1;steps(dt,true);if(MX.every(v=>v>=T)||STEP>=STEPS){phase='D';finT=0;finGoal=1;$('rep').classList.remove('on')}}
 else{theta+=dt*0.11;tscale=finT<1.3?0.12:Math.min(0.5,0.12+(finT-1.3)*0.3);steps(dt);
 if(ringT<0&&finT>0.5){BUOYS.forEach(([x,y])=>ring(x,y,0.5));ringT=finT}
@@ -289,10 +304,11 @@ function frame(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
 camK+=Math.sign(camGoal-camK)*Math.min(Math.abs(camGoal-camK),dt/camDur);
 fin+=Math.sign(finGoal-fin)*Math.min(Math.abs(finGoal-fin),dt/(finGoal?1.6:0.6));
 for(const b of bursts)b.t+=dt*(state==='win'?1.1:1.6);
-BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLit[k]=now;litOrder.push(k);bursts.push({x,y,t:0});if(phase!=='C')chime(litOrder.length-1)}
+BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLit[k]=now;litOrder.push(k);bursts.push({x,y,t:0});if(LV.tune)note(LV.tune.f[k]);else if(phase!=='C')chime(litOrder.length-1)}
 const pop=wasLit[k]&&!closing?0.22*Math.exp(-(now-wasLit[k])/260):0,tg=closing?0:(f>=1?1:Math.pow(f,2.4)*0.9);disp[k]+=(tg-disp[k])*Math.min(1,dt*(closing?3:7));BUOYS[k].show=Math.max(0,disp[k])+pop});
 if(state==='win')finale(dt,now);
-else if(state==='run'){steps(dt,true);if(MX.every(v=>v>=T))win();
+else if(state==='run'){steps(dt,true);if(MX.every(v=>v>=T)){if(!LV.tune)win();else{const j=judge();lastJ=j;if(j.ok){stars=j.err<=7?3:j.err<=13?2:1;win()}else{state='done';score();say((j.ord.every((k,i)=>LV.tune.f[k]===LV.tune.f[i])?'Порядок правильний, але ритм не той: порівняйте смужки «треба» і «вийшло» вгорі.':'Ноти прозвучали не в тому порядку. Цифри біля латать показують, як вийшло.')+' Торкніться води або натисніть «Ще раз».')}}}
+else if(STEP>=STEPS&&LV.tune){state='done';score();lastJ=judge();say('Хвиля не дійшла до всіх латать. Спробуйте з іншого місця.')}
 else if(STEP>=STEPS){state='done';score();lastRes=MX.map(v=>v/T);const lit=MX.filter(v=>v>=T).length,low=Math.min(99,Math.round(Math.min(...lastRes)*100));
 say((BUOYS.length>1?'Розкрилося '+lit+' з '+BUOYS.length+'. Найслабша хвиля дала ':'Хвиля дала ')+low+'% потрібної висоти. '+(low>=85?'Майже! Посуньте краплю зовсім трохи.':'Спробуйте з іншого місця.')+' Торкніться води або натисніть «Ще раз».')}}
 else if(state==='done'&&STEP<STEPS*3){simTick();simTick()}
@@ -308,11 +324,11 @@ stage.addEventListener('pointerleave',()=>{hover=null;isDown=false});
 stage.addEventListener('pointerup',e=>{if(!isDown)return;isDown=false;if(state==='done'){reset();if(e.pointerType!=='mouse')hover=null;return}if(state!=='idle'||camK>0.01)return;const[x,y]=cell(e);if(e.pointerType!=='mouse')hover=null;
 if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x]){say('Сюди кинути не можна. Киньте краплю у воду.');return}
 if(!canDrop(x,y)){say('Занадто близько до латаття. Киньте краплю трохи далі.');return}drop(x,y)});
-$('again').onclick=reset;$('hint').onclick=hint;$('next').onclick=next;$('cgo').onclick=begin;
+$('listen').onclick=$('clisten').onclick=listen;$('again').onclick=reset;$('hint').onclick=hint;$('next').onclick=next;$('cgo').onclick=begin;
 $('snd').onclick=()=>{muted=!muted;store.set('pleso-mute',muted?'1':'0');sndLabel();if(!muted)tone(NOTES[0],0,0.5,0.08)};sndLabel();
 addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
 if(state==='card'){if(e.code==='Enter'||e.code==='Space'){e.preventDefault();begin()}return}
-if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}if(e.code==='KeyN'&&state==='win'){e.preventDefault();next()}});
+if(e.code==='KeyM'){e.preventDefault();listen()}if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}if(e.code==='KeyN'&&state==='win'){e.preventDefault();next()}});
 window.__test={level:i=>{setLevel(i);begin()},drop:(x,y)=>{reset();camK=0;fin=0;drop(x,y)},hover:(x,y)=>{hover=x==null?null:[x,y]},
 fast:()=>{while(state==='run'&&STEP<STEPS&&!MX.every(v=>v>=T))simTick()},state:()=>[lvI,state,phase,STEP,+camK.toFixed(2),+finT.toFixed(1),MX.map(v=>+(v/T).toFixed(2))]};
 setLevel(Math.min(LAST,Math.max(0,+(store.get('pleso-level')||0)||0)));requestAnimationFrame(frame);
