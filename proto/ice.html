@@ -103,15 +103,13 @@ Proto({
     if (this.state === 'win') { winT += dt; const n = fresh.length, head = (winT * 0.55 % 1.5) * n; for (let k = Math.max(0, Math.floor(head - n * 0.07)); k < Math.min(n, head); k++) { const [x, y] = px(fresh[k], K), rad = 1.5 * K, a2 = 0.5 * (1 - (head - k) / (n * 0.07)), gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, 'rgba(255,236,190,' + a2 + ')'); gr.addColorStop(1, 'rgba(255,200,120,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); } } else winT = 0;
     g.restore();
     // lanterns and ducks
-    for (const p of LVI.posts) { const lit = near(p, 3), [x, y] = at(p, K); const gl = g.createRadialGradient(x, y, 0, x, y, (lit ? 11 : 5) * K); gl.addColorStop(0, lit ? 'rgba(255,196,90,.75)' : 'rgba(255,196,90,.22)'); gl.addColorStop(1, 'rgba(255,196,90,0)'); g.fillStyle = gl; g.fillRect(x - 11 * K, y - 11 * K, 22 * K, 22 * K);
-      g.globalAlpha = lit ? 1 : 0.6; g.fillStyle = '#fff'; emoji(g, '🏮', x, y, 5.6 * K); g.globalAlpha = 1; }
-    for (const d of LVI.ducks || []) { const [x, y] = at(d, K), caught = near(d, 3); g.strokeStyle = 'rgba(200,230,255,.35)'; g.lineWidth = Math.max(1, K * 0.18);
-      if (!caught) for (let k = 0; k < 2; k++) { const ph = (now / 2200 + k * 0.5) % 1; g.globalAlpha = 1 - ph; g.beginPath(); g.ellipse(x, y + K, (2 + ph * 4) * K, (1.2 + ph * 2.4) * K, 0, 0, 7); g.stroke(); } g.globalAlpha = 1; g.fillStyle = '#fff'; emoji(g, caught ? '🧊' : '🦆', x, y, 5.4 * K); }
+    for (const p of LVI.posts) { const [x, y] = at(p, K); Art.lantern(g, x, y, K * 0.95, near(p, 3), now); }
+    for (const d of LVI.ducks || []) { const [x, y] = at(d, K); Art.duck(g, x, y, K * 1.3, now, near(d, 3)); }
     // the night runs out: the sky warms and a bar counts down to dawn
     const p = Math.min(1, stepN / LVI.dawn), u = size / 600; if (p > 0.5) { const q = (p - 0.5) * 2, sk = g.createLinearGradient(0, 0, size, size); sk.addColorStop(0, 'rgba(255,170,110,' + 0.34 * q * q + ')'); sk.addColorStop(1, 'rgba(255,120,150,0)'); g.fillStyle = sk; g.fillRect(0, 0, size, size); }
     g.fillStyle = 'rgba(4,16,26,.7)'; g.beginPath(); g.roundRect(14 * u, 12 * u, 190 * u, 22 * u, 11 * u); g.fill(); g.fillStyle = 'rgba(255,255,255,.14)'; g.beginPath(); g.roundRect(40 * u, 21 * u, 138 * u, 4 * u, 2 * u); g.fill();
     const bg = g.createLinearGradient(40 * u, 0, 178 * u, 0); bg.addColorStop(0, '#8fb8ff'); bg.addColorStop(1, '#ffb070'); g.fillStyle = bg; g.beginPath(); g.roundRect(40 * u, 21 * u, Math.max(1, 138 * u * p), 4 * u, 2 * u); g.fill();
-    g.fillStyle = '#fff'; emoji(g, '🌙', 27 * u, 23 * u, 12 * u); emoji(g, '☀️', 191 * u, 23 * u, 12 * u);
+    Art.moon(g, 27 * u, 23 * u, 6 * u); Art.sun(g, 191 * u, 23 * u, 7 * u);
   }
 });
 </script></body></html>
