@@ -38,6 +38,8 @@ if (process.argv[2] !== undefined) {
   const { execFile } = require('child_process'), os = require('os');
   const n = A.LEVELS.length, results = new Array(n);
   let next = 0, running = 0, done = 0;
+  // CHECK_JOBS limits how many levels run at once, for a machine that is busy with other work.
+  const jobs = Math.max(1, +process.env.CHECK_JOBS || os.cpus().length - 1);
   const finish = () => {
     let failed = 0;
     results.forEach(r => { console.log(r.line); if (r.failed) failed++; });
@@ -45,7 +47,7 @@ if (process.argv[2] !== undefined) {
     console.log('all ' + n + ' levels pass');
   };
   const pump = () => {
-    while (running < Math.max(1, os.cpus().length - 1) && next < n) {
+    while (running < jobs && next < n) {
       const i = next++; running++;
       execFile(process.execPath, [__filename, String(i)], { maxBuffer: 1e7 }, (err, out) => {
         results[i] = err ? { failed: true, line: `FAIL ${i + 1}. could not run: ${err.message}` } : JSON.parse(out);

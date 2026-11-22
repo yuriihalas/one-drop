@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Блискавка: прототип</title><link rel="stylesheet" href="kit.css"></head><body>
+<script src="kit.js"></script>
+<script>
+// LAW: a bolt takes the path of least resistance from the touch to the ground, and the whole
+// path is decided at once. Air resists (unevenly), heavy rain resists half as much, wood five
+// times less, a wire sixty times less. First a faint leader feels its way down in many branches;
+// the branch that touches the ground first carries the bright return stroke back up.
+const G = 96, AIR = 1, RAIN = 0.45, WOOD = 0.2, WIRE = 0.03;
+const cost = new Float32Array(G * G), kind = new Uint8Array(G * G); // 0 air, 1 wire, 2 tree, 3 house, 4 rain
+let lamps = [], path = [], tips = [], dist = null, dEnd = 0, reach = 0, back = -1, lit = [], hit = 0, flash = 0, LVL = null;
+const seg = (a, f) => { const n = Math.max(Math.abs(a[2] - a[0]), Math.abs(a[3] - a[1])); for (let k = 0; k <= n; k++) f(Math.round(a[0] + (a[2] - a[0]) * k / n), Math.round(a[1] + (a[3] - a[1]) * k / n)); };
+const LEVELS = [
+  { name: 'Найлегший шлях', text: 'Блискавка не шукає найкоротшої дороги до землі. Вона шукає найлегшу: дріт проводить струм у десятки разів краще за повітря. Влучте блискавкою в ліхтар.',
+    wires: [[60, 30, 60, 93]], lamps: [[60, 60]], trees: [], houses: [], rain: [], best: [52, 14] },
+  { name: 'Дерево', text: 'Дерево теж проводить струм: гірше за дріт, але краще за повітря. Запаліть обидва ліхтарі й не влучте в дерево.',
+    wires: [[28, 22, 28, 50], [28, 50, 66, 50], [66, 50, 66, 93]], lamps: [[28, 38], [66, 72]], trees: [[48, 62]], houses: [], rain: [], best: [22, 12] },
+  { name: 'Дощ і відвід', text: 'Щільна смуга дощу проводить удвічі краще за сухе повітря і веде блискавку за собою. Над хатами стоїть блискавковідвід. Зробіть так, щоб удар пішов у нього, а не в дах.',
+    wires: [[70, 40, 70, 93]], lamps: [[70, 66]], trees: [], houses: [[22, 82], [46, 82]], rain: [[30, 6, 44, 70], [84, 4, 72, 38]], best: [86, 8] }];
+function build(L) { LVL = L;
+  const r = rng(11 + LEVELS.indexOf(L) * 7), n = new Float32Array(13 * 13).map(() => r());
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) { // smooth noise: air is not uniform
+    const fx = x / 8, fy = y / 8, ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy, v = (i, j) => n[j * 13 + i];
+    const s = v(ix, iy) * (1 - ax) * (1 - ay) + v(ix + 1, iy) * ax * (1 - ay) + v(ix, iy + 1) * (1 - ax) * ay + v(ix + 1, iy + 1) * ax * ay;
+    cost[y * G + x] = AIR * (0.7 + 1.5 * s); kind[y * G + x] = 0; }
+  for (const a of L.rain) seg(a, (x, y) => { for (let d = -3; d <= 3; d++) { const X = x + d; if (X < 0 || X >= G) continue; kind[y * G + X] = 4; cost[y * G + X] = RAIN; } });
+  for (const t of L.trees) { for (let y = t[1]; y < G; y++) { kind[y * G + t[0]] = 2; cost[y * G + t[0]] = WOOD; }
+    for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36) { const i = (t[1] + y) * G + t[0] + x; kind[i] = 2; cost[i] = WOOD; } }
+  for (const h of L.houses) for (let y = h[1] - 9; y < G; y++) for (let x = h[0] - 7; x <= h[0] + 7; x++) { if (y < h[1] && Math.abs(x - h[0]) > (y - (h[1] - 9)) * 0.85) continue; kind[y * G + x] = 3; cost[y * G + x] = WOOD * 1.6; }
+  for (const w of L.wires) seg(w, (x, y) => { kind[y * G + x] = 1; cost[y * G + x] = WIRE; });
+  lamps = L.lamps; path = []; tips = []; reach = 0; back = -1; lit = lamps.map(() => 0); hit = 0; flash = 0; dist = null; }
+function strike(sx, sy) { // Dijkstra over the whole field; the first ground cell reached ends the main channel
+  const d = new Float64Array(G * G).fill(1e9), from = new Int32Array(G * G).fill(-1), heap = [[0, sy * G + sx]]; d[sy * G + sx] = 0; let end = -1, lim = 1e9;
+  while (heap.length) { let m = 0; for (let k = 1; k < heap.length; k++) if (heap[k][0] < heap[m][0]) m = k;
+    const [dk, i] = heap.splice(m, 1)[0]; if (dk > d[i]) continue; if (dk > lim) break; const x = i % G, y = (i - x) / G; if (y === G - 1 && end < 0) { end = i; lim = dk * 1.02; }
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= G || Y >= G) continue;
+      const j = Y * G + X, nd = dk + 0.5 * (cost[i] + cost[j]) * Math.hypot(dx, dy); if (nd < d[j]) { d[j] = nd; from[j] = i; heap.push([nd, j]); } } }
+  const walk = e => { const p = []; for (let i = e; i >= 0; i = from[i]) p.push(i); return p.reverse(); };
+  dist = d; dEnd = d[end]; path = walk(end);
+  // side branches of the leader: other cells it had reached by the time the main channel landed
+  const r = rng(sx * 131 + sy * 17 + 3), onMain = new Uint8Array(G * G); for (const i of path) onMain[i] = 1; tips = [];
+  for (let tries = 0; tries < 400 && tips.length < 16; tries++) { const i = (r() * G * G) | 0; if (d[i] > dEnd * 0.98 || d[i] < dEnd * 0.25 || kind[i] === 1) continue; const p = walk(i); let k = 0; while (k < p.length && onMain[p[k]]) k++; if (p.length - k < 5) continue; tips.push(p.slice(Math.max(0, k - 1))); } }
+Proto({
+  G, levels: LEVELS, build, speed: 1, idleText: 'Торкніться неба: звідти вдарить блискавка.',
+  tap(x, y) { const k = kind[y * G + x]; if (k && k !== 4) { this.say('Почніть у повітрі, а не на дроті, дереві чи хаті.'); return false; } strike(x, y); reach = 0; back = -1; this.say('Лідер шукає дорогу…'); },
+  step() { if (back < 0) { reach += dEnd / 34; if (reach >= dEnd) { back = 0; flash = 1; this.say('Зворотний удар!'); } }
+    else { back += path.length / 9; for (const i of path) { const x = i % G, y = (i - x) / G; if (kind[i] === 2 || kind[i] === 3) hit = kind[i]; lamps.forEach((l, k) => { if (Math.abs(l[0] - x) <= 1 && Math.abs(l[1] - y) <= 1) lit[k] = 1; }); } } },
+  verdict() { if (back < path.length || !path.length) return 0; return !hit && lit.every(v => v) ? 1 : -1; },
+  winText: () => 'Струм пройшов дротом і запалив ліхтарі.',
+  failText: () => hit === 2 ? 'Блискавка влучила в дерево: для неї це був легший шлях.' : hit === 3 ? 'Блискавка влучила в хату: до даху було ближче й легше, ніж до відводу.' : lit.some(v => v) ? 'Засвітився не кожен ліхтар: блискавка зайшла на дріт нижче одного з них.' : 'Блискавка знайшла легший шлях до землі повз ліхтарі.',
+  after() { flash *= 0.9; },
+  draw(g, K, now, size) {
+    const u = size / 600, fl = flash > 0.02 ? flash : 0, shake = fl * 4 * u; g.save(); g.translate((Math.sin(now / 13) * shake), (Math.cos(now / 17) * shake));
+    const sky = g.createLinearGradient(0, 0, 0, size); sky.addColorStop(0, '#0e1326'); sky.addColorStop(0.7, '#1e2b45'); sky.addColorStop(1, '#22333a'); g.fillStyle = sky; g.fillRect(-10, -10, size + 20, size + 20);
+    const r = rng(5);
+    g.fillStyle = '#16213a'; g.beginPath(); g.moveTo(0, 80 * K); for (let x = 0; x <= G; x += 6) g.lineTo(x * K, (78 - 6 * Math.sin(x * 0.11) - 3 * Math.sin(x * 0.37 + 1)) * K); g.lineTo(size, size); g.lineTo(0, size); g.fill();
+    for (let k = 0; k < 16; k++) { const cx = r() * size, cy = (1 + r() * 11) * K, a = 0.10 + 0.07 * r() + fl * 0.25; g.fillStyle = 'rgba(' + (150 + 90 * fl | 0) + ',' + (160 + 80 * fl | 0) + ',' + (190 + 60 * fl | 0) + ',' + a + ')'; g.beginPath(); g.ellipse(cx, cy, (9 + r() * 16) * K, (3 + r() * 4) * K, 0, 0, 7); g.fill(); }
+    // rain: thin everywhere, dense in the shafts that conduct
+    g.strokeStyle = 'rgba(170,190,230,.17)'; g.lineWidth = Math.max(1, K * 0.11); g.beginPath(); for (let k = 0; k < 110; k++) { const x = r() * size, y = ((r() + now / 800) % 1) * size; g.moveTo(x, y); g.lineTo(x - K * 0.7, y + K * 2.6); } g.stroke();
+    for (const a of LVL.rain) { g.strokeStyle = 'rgba(150,185,235,.34)'; g.lineWidth = Math.max(1, K * 0.16); g.beginPath(); const rr = rng(a[0] * 7 + a[1]);
+      for (let k = 0; k < 150; k++) { const t = (rr() + now / 620) % 1, off = (rr() - 0.5) * 7, x = (a[0] + (a[2] - a[0]) * t + off) * K, y = (a[1] + (a[3] - a[1]) * t) * K, dx = (a[2] - a[0]) / (a[3] - a[1]); g.moveTo(x, y); g.lineTo(x + dx * K * 2.4, y + K * 2.4); } g.stroke(); }
+    // ground, wet and reflecting the flash
+    const gr = g.createLinearGradient(0, (G - 3) * K, 0, size); gr.addColorStop(0, fl ? '#3c4a52' : '#1b2a24'); gr.addColorStop(1, '#0f1814'); g.fillStyle = gr; g.fillRect(-10, (G - 3) * K, size + 20, 3 * K + 10);
+    for (const t of LVL.trees) { const burnt = hit === 2 && back >= path.length; g.fillStyle = '#2f2218'; g.fillRect((t[0] - 0.7) * K, t[1] * K, 1.9 * K, (G - 2 - t[1]) * K);
+      for (let k = 0; k < 9; k++) { const rr = rng(t[0] * 31 + k), ox = (rr() - 0.5) * 8, oy = (rr() - 0.5) * 8; g.fillStyle = burnt ? 'rgba(110,50,24,.9)' : ['#1b3f25', '#22502d', '#183820'][k % 3]; g.beginPath(); g.arc((t[0] + 0.5 + ox) * K, (t[1] + 0.5 + oy) * K, (3 + rr() * 1.8) * K, 0, 7); g.fill(); } }
+    for (const h of LVL.houses) { const x = h[0] * K, y = h[1] * K, burnt = hit === 3 && back >= path.length; g.fillStyle = burnt ? '#4a2a20' : '#3b4656'; g.fillRect(x - 6.5 * K, y, 14 * K, (G - 2 - h[1]) * K);
+      g.fillStyle = burnt ? '#7a3a22' : '#5a3c34'; g.beginPath(); g.moveTo(x - 8 * K, y); g.lineTo(x + 0.5 * K, y - 9 * K); g.lineTo(x + 9 * K, y); g.fill(); g.fillStyle = fl || burnt ? '#ffe9a0' : '#f2c66a'; g.fillRect(x - 3.6 * K, y + 3 * K, 2.6 * K, 2.8 * K); g.fillRect(x + 2 * K, y + 3 * K, 2.6 * K, 2.8 * K); }
+    g.strokeStyle = '#9aa5b3'; g.lineWidth = Math.max(1.5, K * 0.36); g.lineCap = 'round'; g.beginPath(); for (const w of LVL.wires) { g.moveTo((w[0] + 0.5) * K, (w[1] + 0.5) * K); g.lineTo((w[2] + 0.5) * K, (w[3] + 0.5) * K); } g.stroke();
+    for (const w of LVL.wires) if (w[0] === w[2]) { g.fillStyle = '#d5dde6'; g.beginPath(); g.moveTo((w[0] + 0.5) * K, (Math.min(w[1], w[3]) - 1.6) * K); g.lineTo((w[0] - 0.2) * K, Math.min(w[1], w[3]) * K + K); g.lineTo((w[0] + 1.2) * K, Math.min(w[1], w[3]) * K + K); g.fill(); }
+    lamps.forEach((l, k) => { const x = (l[0] + 0.5) * K, y = (l[1] + 0.5) * K; if (lit[k]) { const gl = g.createRadialGradient(x, y, 0, x, y, 10 * K); gl.addColorStop(0, 'rgba(255,225,130,.8)'); gl.addColorStop(1, 'rgba(255,225,130,0)'); g.fillStyle = gl; g.fillRect(x - 10 * K, y - 10 * K, 20 * K, 20 * K); }
+      g.fillStyle = lit[k] ? '#ffe9a0' : '#4b5563'; g.strokeStyle = '#cbd5e1'; g.lineWidth = Math.max(1, K * 0.25); g.beginPath(); g.arc(x, y, 1.9 * K, 0, 7); g.fill(); g.stroke(); });
+    if (path.length) { const jit = i => Math.sin(i * 12.9898) * K * 0.28, px = i => (i % G + 0.5) * K + jit(i), py = i => (((i / G) | 0) + 0.5) * K, lead = back < 0, fade = lead ? 1 : Math.max(0, 1 - back / path.length * 1.5);
+      g.lineJoin = 'round';
+      // the leader: dim, violet, every branch growing at the pace of its own resistance
+      const drawTo = (p, lw, col) => { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); let on = false; for (const i of p) { if (dist[i] > reach) break; on ? g.lineTo(px(i), py(i)) : g.moveTo(px(i), py(i)); on = true; } g.stroke(); };
+      if (fade > 0) { g.save(); g.shadowColor = '#a78bfa'; g.shadowBlur = 8 * u; for (const p of tips) drawTo(p, Math.max(1, K * 0.16), 'rgba(196,181,253,' + (0.55 * fade * (0.6 + 0.4 * Math.sin(now / 37 + p.length))) + ')'); if (lead) drawTo(path, Math.max(1, K * 0.2), 'rgba(221,214,254,.8)'); g.restore(); }
+      // the return stroke climbs from the ground along the one channel that connected
+      if (!lead) { const upto = Math.min(path.length, Math.ceil(back)); g.save(); g.shadowColor = '#cfe0ff'; g.shadowBlur = 18 * u; g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, K * 0.55); g.beginPath();
+        for (let k = path.length - 1; k >= path.length - upto; k--) { const i = path[k]; k === path.length - 1 ? g.moveTo(px(i), py(i)) : g.lineTo(px(i), py(i)); } g.stroke(); g.restore(); }
+      const i0 = path[0]; g.fillStyle = '#fff'; g.beginPath(); g.arc(px(i0), py(i0), 0.9 * K, 0, 7); g.fill(); }
+    g.restore();
+    if (fl) { g.fillStyle = 'rgba(225,235,255,' + (fl * 0.4) + ')'; g.fillRect(0, 0, size, size); }
+    if (this.hover && this.state === 'idle') { g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = Math.max(1, K * 0.2); g.beginPath(); g.arc((this.hover[0] + 0.5) * K, (this.hover[1] + 0.5) * K, 1.6 * K, 0, 7); g.stroke(); }
+  }
+});
+</script></body></html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Повітря: прототип</title><link rel="stylesheet" href="kit.css"></head><body>
+<script src="kit.js"></script>
+<script>
+// LAW: a tuning fork hums one note without stopping. A room answers only at the places where its own
+// standing wave swings; put the fork on a still line of that wave and the room stays silent.
+const G = 96, C2 = 0.25, KEEP = 0.9994, DRIVE = 0.02, TOTAL = 2600;
+const wall = new Uint8Array(G * G);
+let P0 = new Float32Array(G * G), P1 = new Float32Array(G * G), P2 = new Float32Array(G * G), env = new Float32Array(G * G);
+let src = -1, tick = 0, omega = 0, LVA = null, peak = [];
+// frequency of the (m,n) standing wave of a room lx by ly cells, exact for this grid
+function modeOmega(m, n, lx, ly) { const a = Math.sin(m * Math.PI / lx / 2), b = Math.sin(n * Math.PI / ly / 2); return 2 * Math.asin(Math.sqrt(C2 * (a * a + b * b))); }
+function airBuild(L) { LVA = L; wall.fill(1); for (const r of L.rooms) for (let y = r[1]; y <= r[3]; y++) for (let x = r[0]; x <= r[2]; x++) wall[y * G + x] = 0;
+  P0.fill(0); P1.fill(0); P2.fill(0); env.fill(0); src = -1; tick = 0; omega = modeOmega(...L.mode); peak = L.bells.map(() => 0); }
+function airTap(x, y) { src = y * G + x; tick = 0; }
+// Friction acts on the motion (the c - P0 term), so it does not shift the room's pitch.
+function airStep() { tick++;
+  for (let y = 1; y < G - 1; y++) for (let x = 1; x < G - 1; x++) { const i = y * G + x; if (wall[i]) continue; const c = P1[i];
+    const l = wall[i - 1] ? c : P1[i - 1], r = wall[i + 1] ? c : P1[i + 1], u = wall[i - G] ? c : P1[i - G], d = wall[i + G] ? c : P1[i + G];
+    const v = c + (c - P0[i]) * KEEP + C2 * (l + r + u + d - 4 * c); P2[i] = v; const a = v < 0 ? -v : v; if (a > env[i]) env[i] = a; }
+  P2[src] += DRIVE * Math.sin(omega * tick);
+  const q = P0; P0 = P1; P1 = P2; P2 = q;
+  if (tick > TOTAL - 500) LVA.bells.forEach((b, k) => { const a = Math.abs(P1[b[1] * G + b[0]]); if (a > peak[k]) peak[k] = a; }); } // a bell is judged by how it rings at the end, once the room has settled
+function airVerdict() { if (tick < TOTAL) return 0; return peak.every(v => v >= LVA.need) ? 1 : -1; }
+const LEVELS = [
+  { name: 'Коридор', text: 'Камертон гуде однією нотою без упину. Коридор відповідає їй стоячою хвилею: в одних місцях повітря гойдається сильно, в інших стоїть. Поставте камертон там, де гойдається, і дзвіночок у кінці задзвенить.',
+    rooms: [[8, 42, 87, 53]], mode: [3, 0, 80, 12], bells: [[86, 48]], need: 0.85, best: [9, 48] },
+  { name: 'Дві кімнати', text: 'Нота камертона підходить лише одній із кімнат. В іншій звук не накопичується, скільки б він не гудів. І навіть у потрібній кімнаті є тихі лінії.',
+    rooms: [[6, 28, 45, 67], [46, 46, 51, 49], [52, 20, 89, 75]], mode: [2, 1, 40, 40], bells: [[7, 29], [26, 66]], need: 0.44, best: [26, 30] }];
+const off = document.createElement('canvas'); off.width = off.height = G; const og = off.getContext('2d'), img = og.createImageData(G, G);
+let ghost = new Float32Array(G * G), motes = [], live = [];
+const hsh = i => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; h = (h * 2246822519) >>> 0; h ^= h >>> 13; return (h >>> 0) / 4294967296; };
+Proto({
+  G, levels: LEVELS, speed: 16, idleText: 'Кімната ледь чутно гуде від протягу: видно, де її повітря гойдається. Поставте камертон туди.',
+  build(L) { if (src >= 0 && LVA === L) for (let i = 0; i < G * G; i++) ghost[i] = Math.max(ghost[i] * 0.6, env[i]); else ghost.fill(0); airBuild(L); live = L.bells.map(() => 0);
+    // dust in the air: each mote sits at a fixed place and is drawn pushed by the air around it
+    motes = []; const r = rng(77); for (let k = 0; k < 6000 && motes.length < 620; k++) { const x = 1 + r() * (G - 2), y = 1 + r() * (G - 2), i = (y | 0) * G + (x | 0); if (!wall[i] && !wall[i - 1] && !wall[i + 1] && !wall[i - G] && !wall[i + G]) motes.push([x, y]); } },
+  tap(x, y) { if (wall[y * G + x]) { this.say('Це стіна. Поставте камертон на підлогу.'); return false; } airTap(x, y); this.say('Камертон гуде, кімната набирає звук…'); },
+  step: airStep, verdict: airVerdict,
+  winText: () => 'Кімната підхопила ноту, дзвіночки дзвенять.',
+  failText: () => 'Дзвіночки ледве ворухнулись (' + peak.map(v => Math.min(99, Math.round(v / LVA.need * 100)) + '%').join(', ') + '). Камертон стояв на тихій лінії або не в тій кімнаті.',
+  draw(g, K, now, size) {
+    const d = img.data, run = src >= 0;
+    for (let i = 0; i < G * G; i++) { let r, gg, b;
+      if (wall[i]) { const t = hsh(i), edge = (i > G && !wall[i - G]) || (i % G && !wall[i - 1]) ? 14 : 0; r = 40 + 12 * t + edge; gg = 38 + 11 * t + edge; b = 44 + 12 * t + edge; }
+      else { const p = Math.max(-1, Math.min(1, P1[i] * 1.6)), e = Math.min(1, (run ? env[i] : ghost[i]) * 0.9); r = 22 + 26 * e; gg = 30 + 30 * e; b = 44 + 40 * e;
+        if (p > 0) { r += 225 * p; gg += 150 * p; b += 30 * p; } else { r += 20 * -p; gg += 150 * -p; b += 205 * -p; } }
+      d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255; }
+    og.putImageData(img, 0, 0); g.imageSmoothingEnabled = true; g.drawImage(off, 0, 0, size, size);
+    // the air moves from high pressure to low: a mote is drawn shifted along the pressure slope, so
+    // it swings most where the pressure itself stays still, as dust does in a sounding tube
+    g.fillStyle = 'rgba(240,235,215,.6)'; const q = Math.max(1.1, K * 0.26); for (const m of motes) { const i = (m[1] | 0) * G + (m[0] | 0), dx = (P1[i + 1] - P1[i - 1]) * 9, dy = (P1[i + G] - P1[i - G]) * 9; g.fillRect((m[0] - Math.max(-1.6, Math.min(1.6, dx))) * K, (m[1] - Math.max(-1.6, Math.min(1.6, dy))) * K, q, q); }
+    // before the fork is placed the room hums faintly in the draught, which shows where its standing wave swings
+    if (src < 0) { const R = LVA.rooms[0], m = LVA.mode, ph = Math.sin(now / 520), u = Math.max(2, K * 2);
+      for (let y = R[1]; y <= R[3]; y += 2) for (let x = R[0]; x <= R[2]; x += 2) { const v = Math.cos(m[0] * Math.PI * (x - R[0] + 1) / m[2]) * Math.cos(m[1] * Math.PI * (y - R[1] + 1) / m[3]) * ph;
+        g.fillStyle = v > 0 ? 'rgba(255,190,90,' + (0.16 * v) + ')' : 'rgba(110,190,255,' + (-0.16 * v) + ')'; g.fillRect(x * K, y * K, u, u); } }
+    LVA.bells.forEach((b, k) => { const f = Math.min(1, peak[k] / LVA.need), x = (b[0] + .5) * K, y = (b[1] + .5) * K; live[k] = Math.max(live[k] * 0.99, Math.abs(P1[b[1] * G + b[0]])); const lf = Math.min(1, live[k] / LVA.need);
+      g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = Math.max(2, K * 0.5); g.beginPath(); g.arc(x, y, 4.4 * K, 0, 7); g.stroke(); g.strokeStyle = lf >= 1 ? '#8fe0b8' : '#ffd27a'; g.beginPath(); g.arc(x, y, 4.4 * K, -Math.PI / 2, -Math.PI / 2 + lf * 6.283); g.stroke();
+      if (f >= 1) { const gl = g.createRadialGradient(x, y, 0, x, y, 8 * K); gl.addColorStop(0, 'rgba(255,225,130,.7)'); gl.addColorStop(1, 'rgba(255,225,130,0)'); g.fillStyle = gl; g.fillRect(x - 8 * K, y - 8 * K, 16 * K, 16 * K); }
+      g.save(); g.translate(x, y); g.rotate(Math.sin(now / 55) * 0.35 * Math.min(1, Math.abs(P1[b[1] * G + b[0]]) * 2)); g.fillStyle = '#fff'; emoji(g, '🔔', 0, 0, 5.4 * K); g.restore(); });
+    if (run) { const x = (src % G + .5) * K, y = (((src / G) | 0) + .5) * K; g.strokeStyle = '#fff'; g.lineWidth = Math.max(1.5, K * .3); g.beginPath(); g.arc(x, y, 1.3 * K, 0, 7); g.stroke();
+      if (this.state === 'run') { const ph = (now / 500) % 1; g.strokeStyle = 'rgba(255,255,255,' + (0.6 * (1 - ph)) + ')'; g.beginPath(); g.arc(x, y, (1.5 + 4 * ph) * K, 0, 7); g.stroke();
+        g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, size - 4, size, 4); g.fillStyle = '#8fe0b8'; g.fillRect(0, size - 4, size * tick / TOTAL, 4); } }
+    if (this.hover && this.state === 'idle' && !wall[this.hover[1] * G + this.hover[0]]) { g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = Math.max(1, K * 0.2); g.beginPath(); g.arc((this.hover[0] + .5) * K, (this.hover[1] + .5) * K, 1.6 * K, 0, 7); g.stroke(); }
+  }
+});
+</script></body></html>
