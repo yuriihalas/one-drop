@@ -132,6 +132,24 @@ float cr=.3+.6*min(w,1.);col=mix(col,mix(vec3(.9,.62,.16),vec3(1.,.86,.32),lit),
 col+=vec3(.42,.26,.06)*lit*(.6+uFin)*smoothstep(uNeed+.3,0.,r)*(.75+.25*sin(uT*5.+float(i)));}}
 }
 float fd=length(s-60.);col=mix(col,sky(normalize(vec3(rd.xy,.02)),L),smoothstep(110.,700.,fd)*uTilt);}
+// reeds as standing stalks: each stalk is a vertical line, tested against the ray's footprint on the water
+if(uReed>.5&&uTilt>.02&&rd.z<-1e-4){float t0=-ro.z/rd.z;vec2 s0=(ro+rd*t0).xy,dz=rd.xy/rd.z;float sa=shore(s0),sc2=shore(s0+dz*6.);
+if(min(sa,sc2)<11.&&max(sa,sc2)>-.5){float zb=-1.,db=1.,hb=1.,cb=0.;
+for(int k=0;k<14;k++){float z=6.*(1.-float(k)/13.);vec2 sp=s0+dz*z;float shp=shore(sp);if(shp<.2||shp>10.5)continue;
+vec2 gg=floor(sp*1.25);float rb=smoothstep(10.5,3.5,shp+(noise(sp*.55)-.5)*3.);if(hash(gg+.37)<1.02-rb*.9)continue;
+vec2 cc=(gg+.5+(vec2(hash(gg+3.1),hash(gg+7.7))-.5)*.75)/1.25;float hz=(2.4+3.4*hash(gg+5.5))*min(1.,uTilt*1.6);
+float zs=clamp(dot(cc-s0,dz)/(dot(dz,dz)+1e-4),0.,hz);float dd=length(s0+dz*zs-cc-vec2(sin(uT*1.3+gg.x)*.05*zs,0.));
+if(dd<.17&&zs>zb){zb=zs;db=dd;hb=hz;cb=hash(gg+1.7);}}
+if(zb>=0.&&t0+zb/rd.z<tHit){vec3 rc=mix(vec3(.1,.22,.06),vec3(.5,.6,.24),cb)*(.55+.6*zb/hb);
+if(cb>.45&&zb>hb-1.1&&zb<hb-.15)rc=vec3(.34,.21,.1);
+col=mix(col,rc*mix(vec3(1.),vec3(1.1,.82,.6),uFin),smoothstep(.17,.08,db));tHit=t0+zb/rd.z;}}}
+// flowers with volume: three layers of petals above the leaf
+if(rd.z<-1e-4){for(int i=0;i<4;i++){float w=uB[i].z;if(w<.06)continue;vec2 c=uB[i].xy;float hw=H(c)*15.*uTilt;
+for(int k=3;k>=1;k--){float zz=hw+float(k)*.55*(.35+.65*min(w,1.)),tk=(zz-ro.z)/rd.z;if(tk>tHit)continue;vec2 q=(ro+rd*tk).xy-c;float r=length(q),a=atan(q.y,q.x)+float(k)*.42;
+float rk=(1.15+(uNeed-1.25)*w)*(1.-.2*float(k)),l1=.5+.5*pow(abs(cos(a*4.)),.55);
+if(r<rk*l1-.12){vec3 pc=mix(vec3(1.,.97,.95),vec3(.97,.5,.72),smoothstep(0.,rk,r))*(.78+.09*float(k));
+if(k==3&&r<.3+.5*min(w,1.))pc=mix(vec3(.9,.62,.16),vec3(1.,.86,.32),uB[i].w);
+col=pc*mix(vec3(1.),vec3(1.08,.84,.66),uFin*.7)*(.86+.22*max(L.z,0.));tHit=tk;break;}}}}
 vec3 Hh=normalize(L+V);
 for(int i=0;i<3;i++){if(uRock[i].z<.5)continue;vec3 c=vec3(uRock[i].xy,-uRock[i].z*.3);float ts=sph(ro,rd,c,uRock[i].z*1.05);if(ts>0.&&ts<tHit){tHit=ts;vec3 q=ro+rd*ts;vec2 s=q.xy;
 vec3 n=normalize(normalize(q-c)+vec3((noise(s*1.7)-.5)*.5,(noise(s*1.7+4.)-.5)*.5,0.));
@@ -226,7 +244,7 @@ const SPEED=150,LAST=LEVELS.length-1;
 let lvI=0,T=0.068,state='card',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
 let camK=0,camGoal=0,camDur=1.8,theta=0,finT=0,ringT=0,tscale=1,fin=0,finGoal=0,phase='',dropAt=null;
 let disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[],closing=false;
-let specks=[];
+let specks=[],fall=null,spray=[];
 function seed(){specks=[];let g2=0;while(specks.length<150&&g2++<4000){const x=2+Math.random()*(N-4),y=2+Math.random()*(N-4);if(!blk[(y|0)*N+(x|0)])specks.push({x,y,hx:x,hy:y})}}
 let hover=null,isDown=false,tt=null,ttKey='',lastRes=null,stars=0,lastJ=null;
 const PITCH={466.16:'#ff8fc0',440:'#ffd95a',392:'#6fc3ff',311.13:'#c79bff',261.63:'#ff7b6b',293.66:'#5fe0d0',329.63:'#8fe08a',349.23:'#ffab5e'};
@@ -265,13 +283,14 @@ $('listen').style.display=$('clisten').style.display=L.tune?'inline-block':'none
 seed();reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
 function begin(){if(state!=='card')return;card.classList.remove('on');state='idle';idleText()}
 function idleText(){if(LEVELS[lvI].tune){say('Знайдіть місце, звідки хвиля торкнеться латать у порядку мелодії. Порядок кольорів і ритм показано вгорі в рядку «треба».');return}say(lvI===0&&!tries?'Торкніться води біля латаття: упаде крапля, і хвиля його розкриє.':'Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
-function reset(){simReset();if(state!=='card')state='idle';splash=null;wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
+function reset(){simReset();if(state!=='card')state='idle';splash=null;fall=null;spray=[];wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
 stage.classList.remove('fin');finEl.classList.remove('on');$('rep').classList.remove('on');$('next').style.display='none';if(state==='idle'){idleText();if(hintLv)showHint()}}
 function showHint(){if(hintLv===1)say('Підказка 1: '+LEVELS[lvI].lesson);
 if(hintLv===2)say('Підказка 2: шукайте місце всередині жовтого кола.');
 if(hintLv>=3)say('Підказка 3: точне місце позначено жовтою цяткою.')}
 function hint(){if(state==='card')return;if(hintLv<3)hintLv++;if(state!=='idle')reset();showHint()}
-function drop(x,y){simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
+function startFall(x,y){fall={x,y,t:0};state='fall';say('Крапля падає…')}
+function drop(x,y){fall=null;spray=[];for(let k=0;k<14;k++){const a=Math.random()*6.283,v=18+Math.random()*30;spray.push({a,v})}simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
 function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
 function score(){if(!marks.length)return;const m=marks[marks.length-1];if(LV.tune){const j=judge();m.s=j.ok?1:Math.max(0.2,0.95-j.err/70)}else m.s=Math.min(...MX)/T}
 function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;score();doneSet.add(lvI);store.set('pleso-done2',[...doneSet].join(','));paintLv();
@@ -314,6 +333,10 @@ g.strokeStyle='#fff';g.lineWidth=2*px;g.beginPath();g.arc(cx,cy,5*px,0,7);g.stro
 else{for(const[x,y]of BUOYS)if(Math.hypot(x-hx,y-hy)<16){g.fillStyle='rgba(240,120,110,.16)';g.strokeStyle='rgba(240,120,110,.7)';g.lineWidth=1.5*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,16*K,0,7);g.fill();g.stroke()}
 g.strokeStyle='rgba(240,120,110,.95)';g.lineWidth=2.5*px;const r=6*px;g.beginPath();g.moveTo(cx-r,cy-r);g.lineTo(cx+r,cy+r);g.moveTo(cx+r,cy-r);g.lineTo(cx-r,cy+r);g.stroke()}}}
 if(state==='done'&&lastRes)BUOYS.forEach(([x,y],k)=>{const f=lastRes[k];label(f>=1?'✓':Math.min(99,Math.round(f*100))+'%',(x+.5)*K,(y+.5)*K-8.5*K,px,f>=1?'#9df0b8':heat(f))});
+if(fall){const a=Math.min(1,fall.t/0.24),cx=(fall.x+.5)*K,cy=(fall.y+.5)*K,off=(1-a)*(1-a)*46*px;g.fillStyle='rgba(4,16,24,'+(0.12+0.3*a)+')';g.beginPath();g.ellipse(cx,cy,(9-5*a)*px,(6-3*a)*px,0,0,7);g.fill();
+g.fillStyle='rgba(235,247,255,.95)';g.beginPath();g.ellipse(cx-off*.35,cy-off,(3.2+1.6*(1-a))*px,(4.4+3*(1-a))*px,0.3,0,7);g.fill()}
+if(splash&&splash.t<0.9){const tt2=splash.t/0.9,cx=(splash.x+.5)*K,cy=(splash.y+.5)*K;for(const q of spray){const d=q.v*px*(tt2-0.45*tt2*tt2)*1.5,rr=(2.2-1.4*tt2)*px;g.fillStyle='rgba(240,250,255,'+(0.9*(1-tt2))+')';g.beginPath();g.arc(cx+Math.cos(q.a)*d,cy+Math.sin(q.a)*d,rr,0,7);g.fill()}
+g.fillStyle='rgba(255,255,255,'+(0.55*(1-tt2))+')';g.beginPath();g.arc(cx,cy,(3+5*Math.sin(tt2*3.1))*px,0,7);g.fill()}
 if(splash&&splash.t<1){const a=splash.t;g.strokeStyle='rgba(255,255,255,'+(0.9*(1-a))+')';g.lineWidth=(3*(1-a)+1)*px;g.beginPath();g.arc((splash.x+.5)*K,(splash.y+.5)*K,(6+a*30)*px,0,7);g.stroke()}
 for(const b of bursts){if(b.t<0||b.t>=1)continue;const a=b.t;g.strokeStyle='rgba(255,214,120,'+(0.95*(1-a))+')';g.lineWidth=(5*(1-a)+1)*px;g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(4+a*13)*K,0,7);g.stroke();
 g.fillStyle='rgba(255,236,180,'+(0.35*(1-a)*(1-a))+')';g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(3+a*6)*K,0,7);g.fill()}}
@@ -339,6 +362,7 @@ fin+=Math.sign(finGoal-fin)*Math.min(Math.abs(finGoal-fin),dt/(finGoal?1.6:0.6))
 for(const b of bursts)b.t+=dt*(state==='win'?1.1:1.6);
 BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLit[k]=now;litOrder.push(k);bursts.push({x,y,t:0});if(LV.tune)note(LV.tune.f[k]);else if(phase!=='C')chime(litOrder.length-1)}
 const pop=wasLit[k]&&!closing?0.22*Math.exp(-(now-wasLit[k])/260):0,tg=closing?0:(f>=1?1:Math.pow(f,2.4)*0.9);disp[k]+=(tg-disp[k])*Math.min(1,dt*(closing?3:7));BUOYS[k].show=Math.max(0,disp[k])+pop});
+if(state==='fall'&&fall){fall.t+=dt;if(fall.t>=0.24)drop(fall.x,fall.y)}
 if(state==='win')finale(dt,now);
 else if(state==='run'){steps(dt,true);if(MX.every(v=>v>=T)){if(!LV.tune)win();else{const j=judge();lastJ=j;if(j.ok){stars=j.err<=7?3:j.err<=13?2:1;win()}else{state='done';score();say((j.ord.every((k,i)=>LV.tune.f[k]===LV.tune.f[i])?'Порядок правильний, але ритм не той: порівняйте смужки «треба» і «вийшло» вгорі.':'Ноти прозвучали не в тому порядку. Цифри біля латать показують, як вийшло.')+' Торкніться води або натисніть «Ще раз».')}}}
 else if(STEP>=STEPS&&LV.tune){state='done';score();lastJ=judge();say('Хвиля не дійшла до всіх латать. Спробуйте з іншого місця.')}
@@ -356,7 +380,7 @@ stage.addEventListener('pointerdown',e=>{if(e.target.closest('#card'))return;isD
 stage.addEventListener('pointerleave',()=>{hover=null;isDown=false});
 stage.addEventListener('pointerup',e=>{if(!isDown)return;isDown=false;if(state==='done'){reset();if(e.pointerType!=='mouse')hover=null;return}if(state!=='idle'||camK>0.01)return;const[x,y]=cell(e);if(e.pointerType!=='mouse')hover=null;
 if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x]){say('Сюди кинути не можна. Киньте краплю у воду.');return}
-if(!canDrop(x,y)){say('Занадто близько до латаття. Киньте краплю трохи далі.');return}drop(x,y)});
+if(!canDrop(x,y)){say('Занадто близько до латаття. Киньте краплю трохи далі.');return}startFall(x,y)});
 $('listen').onclick=$('clisten').onclick=listen;$('again').onclick=reset;$('hint').onclick=hint;$('next').onclick=next;$('cgo').onclick=begin;
 $('snd').onclick=()=>{muted=!muted;store.set('pleso-mute',muted?'1':'0');sndLabel();if(!muted)tone(NOTES[0],0,0.5,0.08)};sndLabel();
 addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
