@@ -6,7 +6,7 @@ html,body{margin:0;height:100%;background:#0d1b22;color:#e8eef0;font-family:syst
 #wrap{display:flex;flex-direction:column;align-items:center;padding:12px;box-sizing:border-box;min-height:100%}
 #top{display:flex;align-items:center;gap:8px;width:100%;max-width:900px;margin-bottom:8px;font-size:14px;color:#a9c3ce}
 #top b{font-weight:600;color:#e8eef0;margin-right:auto}
-.lv{width:28px;padding:4px 0;text-align:center;font-size:13px}
+.lv{width:26px;padding:3px 0;text-align:center;font-size:12px}
 .lv.done{color:#8fe0b8;border-color:#3f8f72}
 #lvs{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
 .lv.cur{background:#2f6d86;border-color:#6fb3cf}
@@ -50,7 +50,7 @@ kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;paddi
 precision highp float;
 in vec2 v;out vec4 o;
 uniform sampler2D uH;uniform float uT,uF,uTilt,uFin,uBase;uniform vec3 uCP,uCT,uUp;
-uniform vec4 uPond,uB[4],uBar[4];uniform vec3 uLand[2],uRock[3];uniform float uLt[4];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];
+uniform vec4 uPond,uB[6],uBar[4];uniform vec3 uLand[2],uRock[3];uniform float uLt[6];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];
 const float N=120.;
 float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
@@ -103,7 +103,7 @@ col+=mix(vec3(.85,.95,1.),vec3(1.,.85,.6),uFin)*smoothstep(.02,.09,h)*.32;
 vec2 so=-normalize(L.xy)*(.6+uFin*1.4);
 col*=mix(.6,1.,smoothstep(-.3,1.5,wallD(s-so*2.5)));
 for(int i=0;i<3;i++){float ds=length(s-uRock[i].xy-so*uRock[i].z);col*=mix(.6,1.,smoothstep(uRock[i].z*.9,uRock[i].z*1.2,ds));}
-for(int i=0;i<4;i++){float dg=length(s-uB[i].xy);col+=vec3(1.,.55,.12)*exp(-dg*dg/60.)*uFin*uB[i].w*(.45+.15*sin(uT*5.+float(i)));}
+for(int i=0;i<6;i++){float dg=length(s-uB[i].xy);col+=vec3(1.,.55,.12)*exp(-dg*dg/60.)*uFin*uB[i].w*(.45+.15*sin(uT*5.+float(i)));}
 float F=.03+.97*pow(1.-max(dot(n,V),0.),5.);
 vec3 R=reflect(-V,n);R.z=abs(R.z);
 col=mix(col,sky(R,L),clamp(F*1.3,0.,.92));
@@ -117,7 +117,7 @@ if(uReed>.5){float rb=smoothstep(10.5,3.5,sh+(fbm(s*.55)-.5)*4.);col*=1.-rb*.22;
 vec2 gg=floor(s*1.25);vec2 cc=(gg+.5+(vec2(hash(gg+3.1),hash(gg+7.7))-.5)*.75)/1.25;vec2 q=s-cc-vec2(sin(uT*1.3+gg.x)*.06,0.);
 float dd=length(vec2(q.x+q.y*.35,q.y*.42));float stalk=smoothstep(.36,.14,dd)*step(1.02-rb*.9,hash(gg+.37));
 col=mix(col,mix(vec3(.13,.27,.07),vec3(.5,.58,.22),hash(gg+1.7))*(.8+.4*max(dot(n,L),0.))*TN,stalk);}
-for(int i=0;i<4;i++){vec2 q=s-uB[i].xy;float sc=1.+clamp(H(uB[i].xy)*2.4,-.12,.32);float r=length(q)/sc;if(r<uNeed+1.6){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
+for(int i=0;i<6;i++){vec2 q=s-uB[i].xy;float sc=1.+clamp(H(uB[i].xy)*2.4,-.12,.32);float r=length(q)/sc;if(r<uNeed+1.6){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
 float notch=smoothstep(.05,.2,abs(a-(float(i)*1.3-2.))-.02);
 float pad=smoothstep(uNeed+.8,uNeed+.55,r)*notch;
 vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/(uNeed+.8))*(.65+.55*max(dot(n,L),0.))*TN*(.9+.5*(sc-1.));
@@ -144,7 +144,7 @@ if(zb>=0.&&t0+zb/rd.z<tHit){vec3 rc=mix(vec3(.1,.22,.06),vec3(.5,.6,.24),cb)*(.5
 if(cb>.45&&zb>hb-1.1&&zb<hb-.15)rc=vec3(.34,.21,.1);
 col=mix(col,rc*mix(vec3(1.),vec3(1.1,.82,.6),uFin),smoothstep(.17,.08,db));tHit=t0+zb/rd.z;}}}
 // flowers with volume: three layers of petals above the leaf
-if(rd.z<-1e-4){for(int i=0;i<4;i++){float w=uB[i].z;if(w<.06)continue;vec2 c=uB[i].xy;float hw=H(c)*15.*uTilt;
+if(rd.z<-1e-4){for(int i=0;i<6;i++){float w=uB[i].z;if(w<.06)continue;vec2 c=uB[i].xy;float hw=H(c)*15.*uTilt;
 for(int k=3;k>=1;k--){float zz=hw+float(k)*.55*(.35+.65*min(w,1.)),tk=(zz-ro.z)/rd.z;if(tk>tHit)continue;vec2 q=(ro+rd*tk).xy-c;float r=length(q),a=atan(q.y,q.x)+float(k)*.42;
 float rk=(1.15+(uNeed-1.25)*w)*(1.-.2*float(k)),l1=.5+.5*pow(abs(cos(a*4.)),.55);
 if(r<rk*l1-.12){vec3 pc=mix(vec3(1.,.97,.95),vec3(.97,.5,.72),smoothstep(0.,rk,r))*(.78+.09*float(k));
@@ -158,7 +158,7 @@ col=base*(.3+.9*max(dot(n,L),0.))*mix(vec3(1.),vec3(1.15,.8,.55),uFin)+SC*pow(ma
 if(rd.z<-1e-4){for(int k=0;k<6;k++){float zz=2.5-float(k)*.5,tk=(zz-ro.z)/rd.z;if(tk>tHit)break;vec2 s=(ro+rd*tk).xy;if(wallD(s)<0.&&shore(s)>-3.){
 vec2 gc=floor(vec2(s.x*.4+floor(s.y*.7)*.5,s.y*.7));vec3 base=vec3(.6,.58,.54)*(.7+.35*hash(gc))*(.82+.3*fbm(s*1.9));
 col=base*(k==0?.72+.4*max(L.z,0.):.5)*mix(vec3(1.),vec3(1.15,.8,.55),uFin);tHit=tk;break;}}}
-for(int i=0;i<4;i++){if(uB[i].w>.5){vec2 c=uB[i].xy;float dd=dot(rd.xy,rd.xy)+1e-5,tb=dot(c-ro.xy,rd.xy)/dd,zb=ro.z+rd.z*tb,d=length(ro.xy+rd.xy*tb-c),lt=uLt[i],hg=9.+34.*exp(-lt*1.3);
+for(int i=0;i<6;i++){if(uB[i].w>.5){vec2 c=uB[i].xy;float dd=dot(rd.xy,rd.xy)+1e-5,tb=dot(c-ro.xy,rd.xy)/dd,zb=ro.z+rd.z*tb,d=length(ro.xy+rd.xy*tb-c),lt=uLt[i],hg=9.+34.*exp(-lt*1.3);
 float g=exp(-d*d/(1.2+2.5*exp(-lt*3.)))*smoothstep(0.,1.5,zb)*exp(-max(zb,0.)/hg)*step(0.,tb)*step(tb,tHit+3.);
 col+=vec3(1.,.78,.35)*g*(.55+1.6*exp(-lt*2.))*uTilt;}}
 col*=1.-uFin*.35*smoothstep(.5,1.4,length(p));
@@ -170,9 +170,9 @@ const N=120,STEPS=760,DAMP=0.9982,RB=10,DISP=0.07;
 const blk=new Uint8Array(N*N),dep=new Float32Array(N*N),c2=new Float32Array(N*N),dmp=new Float32Array(N*N),cE=new Float32Array(N*N),cS=new Float32Array(N*N),bb=new Float32Array(N*N),AA=new Float32Array(N*N);
 let A1=new Float32Array(N*N),A2=new Float32Array(N*N),OP=new Int32Array(0);
 const nE=new Int32Array(N*N),nW=new Int32Array(N*N),nS=new Int32Array(N*N),nN=new Int32Array(N*N);
-let LV=null,BUOYS=[],U=new Float32Array(N*N),P=new Float32Array(N*N),Q=new Float32Array(N*N),MX=[],ARR=[],STEP=0;
+let LV=null,BUOYS=[],U=new Float32Array(N*N),P=new Float32Array(N*N),Q=new Float32Array(N*N),MX=[],ARR=[],QS=[],MQ=[],STEP=0;
 function segd(x,y,a){const dx=a[2]-a[0],dy=a[3]-a[1],t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(x-a[0]-dx*t,y-a[1]-dy*t)}
-function buildLevel(L){LV=L;BUOYS=L.lilies;blk.fill(0);const[cx,cy,rx,ry]=L.pond;
+function buildLevel(L){LV=L;BUOYS=L.lilies;QS=L.quiet||[];blk.fill(0);const[cx,cy,rx,ry]=L.pond;
 for(let y=0;y<N;y++)for(let x=0;x<N;x++){const i=y*N+x;const e=((x-cx)/rx)**2+((y-cy)/ry)**2;let out=e>=1||x<1||y<1||x>N-2||y>N-2;
 let sh=(1-Math.sqrt(e))*Math.min(rx,ry);
 for(const[lx,ly,lr]of L.lands||[]){const dl=Math.hypot(x-lx,y-ly)-lr;if(dl<0)out=true;sh=Math.min(sh,dl)}
@@ -187,7 +187,7 @@ dmp[i]=1-a}
 for(let i=0;i<N*N-N;i++){cE[i]=blk[i]||blk[i+1]?0:0.5*(c2[i]+c2[i+1]);cS[i]=blk[i]||blk[i+N]?0:0.5*(c2[i]+c2[i+N])}
 const op=[];for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++){const i=y*N+x;if(blk[i])continue;op.push(i);nE[i]=blk[i+1]?i:i+1;nW[i]=blk[i-1]?i:i-1;nS[i]=blk[i+N]?i:i+N;nN[i]=blk[i-N]?i:i-N}OP=Int32Array.from(op);
 simReset()}
-function simReset(){U.fill(0);P.fill(0);Q.fill(0);MX=BUOYS.map(()=>0);ARR=BUOYS.map(()=>0);STEP=0}
+function simReset(){U.fill(0);P.fill(0);Q.fill(0);MX=BUOYS.map(()=>0);ARR=BUOYS.map(()=>0);MQ=QS.map(()=>0);STEP=0}
 function simDrop(dx,dy){for(let y=-7;y<=7;y++)for(let x=-7;x<=7;x++){const X=dx+x,Y=dy+y;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-Math.exp(-(x*x+y*y)/7);U[Y*N+X]=v;P[Y*N+X]=v}}
 // Linear Boussinesq water: u_tt - b*lap(u_tt) = div(c2*grad u). Deep water (large b) is dispersive:
 // short ripples lag behind the front and form a ring train; shallow water (b near 0) is not.
@@ -199,11 +199,13 @@ dst[i]=(AA[i]+b*(src[nE[i]]+src[nW[i]]+src[nS[i]]+src[nN[i]]))/(1+4*b)}
 src=dst;dst=dst===A1?A2:A1}
 for(let j=0;j<n;j++){const i=OP[j],c=U[i];Q[i]=(c+(c-P[i])*dmp[i]+src[i])*DAMP}
 const q=P;P=U;U=Q;Q=q;STEP++;
-for(let k=0;k<BUOYS.length;k++){const v=Math.abs(U[BUOYS[k][1]*N+BUOYS[k][0]]);if(v>MX[k])MX[k]=v;if(!ARR[k]&&v>=LV.T)ARR[k]=STEP}}
+for(let k=0;k<BUOYS.length;k++){const v=Math.abs(U[BUOYS[k][1]*N+BUOYS[k][0]]);if(v>MX[k])MX[k]=v;if(!ARR[k]&&v>=LV.T)ARR[k]=STEP}
+for(let k=0;k<QS.length;k++){const v=Math.abs(U[QS[k][1]*N+QS[k][0]]);if(v>MQ[k])MQ[k]=v}}
+function woke(){for(let k=0;k<QS.length;k++)if(MQ[k]>=LV.Tq)return 1;return 0}
 function judge(){const t=LV.tune,n=BUOYS.length;if(ARR.some(a=>!a))return{ok:0,err:999,ord:[]};const ord=BUOYS.map((_,k)=>k).sort((a,b)=>ARR[a]-ARR[b]);let ok=1,err=0;
 for(let i=0;i<n;i++){if(t.f[ord[i]]!==t.f[i])ok=0;if(i){if(ARR[ord[i]]-ARR[ord[i-1]]<5)ok=0;err=Math.max(err,Math.abs(ARR[ord[i]]-ARR[ord[0]]-t.on[i]*t.unit))}}
 if(err>t.tol)ok=0;return{ok,err,ord}}
-function canDrop(x,y){if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x])return 0;for(const[bx,by]of BUOYS)if(Math.hypot(bx-x,by-y)<16)return 0;return 1}
+function canDrop(x,y){if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x])return 0;for(const[bx,by]of BUOYS)if(Math.hypot(bx-x,by-y)<16)return 0;for(const[bx,by]of QS)if(Math.hypot(bx-x,by-y)<12)return 0;return 1}
 //<CORE
 const LEVELS=[
 {name:'Перша крапля',nocard:1,lesson:'Торкніться води: упаде крапля, і хвиля розкриє латаття. Що ближче крапля, то вища хвиля.',pond:[60,60,54,52],reeds:1,base:30,lilies:[[60,46]],T:0.0708,hint:[51,60,13],best:[47,56]},
@@ -235,7 +237,27 @@ const LEVELS=[
 {name:'Острови',lesson:'Два острови, скеля і ряска. Кам\u2019яні береги островів теж відбивають хвилю.',pond:[60,60,56,54],base:30,lands:[[44,50,10],[80,72,11]],rocks:[[70,36,6]],weeds:[[40,86,9]],lilies:[[24,56],[60,22],[100,60],[62,98]],T:0.0753,hint:[21,67,13],best:[17,71]},
 {name:'Хребет',lesson:'Під водою тягнеться довгий мілкий хребет. Хвиля тримається мілини й біжить уздовж неї, як у каналі.',pond:[60,60,56,50],reeds:1,base:30,bars:[[40,60,.85,90],[56,60,.85,90],[72,60,.85,90],[88,60,.85,90]],lilies:[[98,60],[40,30],[40,90]],T:0.0664,hint:[21,63,13],best:[17,59]},
 {name:'З днем народження',lesson:'Чотири ноти, і дві перші звучать майже разом. На шляху стоять скеля і яма.',pond:[60,60,54,50],reeds:1,base:30,rocks:[[60,44,9]],bars:[[64,78,-1,240]],lilies:[[40,60],[41,38],[54,74],[69,49]],T:0.012,tune:{title:'«З днем народження»',f:[392,392,440,392],on:[0,0.75,1,2],unit:32,tol:11},hint:[25,56,13],best:[21,60]},
-{name:'Велике плесо',lesson:'Найбільший ставок: острів, скелі, стіни, мілина, яма і ряска. Одна крапля, чотири латаття.',pond:[60,60,56,55],base:2.6,lands:[[60,60,9]],rocks:[[34,40,7],[88,84,7]],walls:[[60,74,60,110,2.2],[84,30,108,44,2.2]],bars:[[90,56,.8,200],[30,84,-1,220]],weeds:[[50,26,9]],lilies:[[22,60],[72,20],[100,66],[44,100]],T:0.053,hint:[36,36,13],best:[32,32]}];
+{name:'Велике плесо',lesson:'Найбільший ставок: острів, скелі, стіни, мілина, яма і ряска. Одна крапля, чотири латаття.',pond:[60,60,56,55],base:2.6,lands:[[60,60,9]],rocks:[[34,40,7],[88,84,7]],walls:[[60,74,60,110,2.2],[84,30,108,44,2.2]],bars:[[90,56,.8,200],[30,84,-1,220]],weeds:[[50,26,9]],lilies:[[22,60],[72,20],[100,66],[44,100]],T:0.053,hint:[36,36,13],best:[32,32]},
+{name:'Тиха жабка',lesson:'На листку спить жабка. Розкрийте латаття, але не розбудіть її: хвиля біля жабки має лишитися низькою. Камінь дає тиху тінь.',pond:[60,60,55,51],reeds:1,base:30,rocks:[[57,73,7]],lilies:[[33,58],[90,58]],quiet:[[61,90]],T:0.0477,Tq:0.0292,hint:[58,21,13],best:[62,17]},
+{name:'Жабка в рясці',lesson:'Жабка сховалася за ряскою. Ряска гасить хвилю: киньте краплю так, щоб ряска лишилася між хвилею і жабкою.',pond:[60,60,55,51],reeds:1,base:30,weeds:[[59,65,12]],lilies:[[28,48],[91,43]],quiet:[[63,83]],T:0.0418,Tq:0.0212,hint:[54,21,13],best:[50,17]},
+{name:'Жабка за стіною',lesson:'Жабка спить за стіною. Хвиля обходить стіну з країв, але слабшає.',pond:[60,60,55,51],reeds:1,base:30,walls:[[25,62,98,62,2.2]],lilies:[[31,37],[89,41]],quiet:[[60,84]],T:0.0571,Tq:0.0061,hint:[57,63,13],best:[53,59]},
+{name:'Жабка на мілині',lesson:'Жабка спить на мілині, а там хвиля росте. Тримайте краплю якнайдалі від неї.',pond:[60,60,55,51],reeds:1,base:30,bars:[[90,65,0.9,220]],lilies:[[29,41],[28,80]],quiet:[[90,65]],T:0.0634,Tq:0.1116,hint:[21,60,13],best:[17,56]},
+{name:'Ода на шість',lesson:'Шість нот «Оди до радості». Порядок кольорів і ритм показано вгорі.',pond:[60,60,55,51],reeds:1,base:30,lilies:[[36,60],[37,37],[50,86],[68,42],[78,83],[91,48]],T:0.012,tune:{title:'«Оду до радості»',f:[329.63,329.63,349.23,392,392,349.23],on:[0,1,2,3,4,5],unit:24,tol:9},hint:[22,56,13],best:[18,60]},
+{name:'Жабка у фокусі',lesson:'Велике латаття стоїть у фокусі кам\u2019яного ставка, а посередині спить жабка.',pond:[60,60,56,38],base:30,lilies:[[103,60]],quiet:[[68,54]],T:0.1219,Tq:0.0817,hint:[15,63,13],best:[11,59]},
+{name:'Дві жабки',lesson:'Дві жабки і три латаття. Камінь посередині затуляє не всіх.',pond:[60,60,55,51],reeds:1,base:30,rocks:[[61,57,8]],lilies:[[29,43],[92,43],[56,97]],quiet:[[39,82],[85,74]],T:0.0387,Tq:0.0773,hint:[48,39,13],best:[44,35]},
+{name:'Жаб\u2019ячий острів',lesson:'Острів посеред кам\u2019яного ставка. Хвиля обходить його з обох боків і зустрічається позаду.',pond:[60,60,56,54],base:30,lands:[[60,60,11]],lilies:[[24,56],[96,64],[59,25]],quiet:[[36,94],[80,87]],T:0.0819,Tq:0.0989,hint:[42,42,13],best:[38,38]},
+{name:'Канал і жабка',lesson:'Канал несе хвилю далеко. Жабки сплять обабіч.',pond:[60,60,55,51],reeds:1,base:30,walls:[[52,52,108,52,2.2],[52,68,108,68,2.2]],lilies:[[102,60],[28,32]],quiet:[[75,83],[34,92]],T:0.0495,Tq:0.0744,hint:[57,61,13],best:[53,65]},
+{name:'Брате Якове далі',lesson:'Шість нот «Брате Якове». Яма прискорює хвилю, скеля її затримує.',pond:[60,60,51,55],reeds:1,base:30,rocks:[[40,68,8]],bars:[[74,54,-1,240]],lilies:[[60,84],[36,84],[85,68],[46,50],[82,36],[62,26]],T:0.012,tune:{title:'«Брате Якове»',f:[261.63,293.66,329.63,261.63,261.63,293.66],on:[0,1,2,3,4,5],unit:24,tol:9},hint:[56,98,13],best:[60,102]},
+{name:'Жабка за лінзою',lesson:'Мілина збирає хвилю в точку. Жабки сплять трохи збоку від цієї точки.',pond:[60,60,54,56],reeds:1,base:30,bars:[[60,58,0.9,200]],lilies:[[60,20],[60,92]],quiet:[[36,86],[85,81]],T:0.056,Tq:0.0676,hint:[63,42,13],best:[59,38]},
+{name:'Яма і жабки',lesson:'Глибока яма розводить хвилю в боки. Скеля затуляє одну з жабок.',pond:[60,60,55,51],reeds:1,base:30,rocks:[[82,43,6]],bars:[[63,58,-1,280]],lilies:[[26,58],[93,70],[61,23]],quiet:[[64,92],[93,36]],T:0.0568,Tq:0.0652,hint:[58,45,13],best:[62,41]},
+{name:'Лабіринт із жабкою',lesson:'У коридорах лабіринту сплять дві жабки.',pond:[60,60,55,53],reeds:1,base:30,walls:[[20,40,84,40,2.2],[36,60,104,60,2.2],[20,80,84,80,2.2]],lilies:[[30,50],[94,70]],quiet:[[88,47],[33,72]],T:0.0306,Tq:0.0883,hint:[106,63,13],best:[110,59]},
+{name:'Зіронька на шість',lesson:'Шість нот «Мерехти, зіронько», і мілина на шляху.',pond:[60,60,55,51],reeds:1,base:30,bars:[[64,62,0.9,240]],lilies:[[84,60],[82,37],[72,88],[55,41],[47,80],[37,58]],T:0.012,tune:{title:'«Мерехти, зіронько»',f:[261.63,261.63,392,392,440,440],on:[0,1,2,3,4,5],unit:24,tol:10},hint:[98,56,13],best:[102,60]},
+{name:'Чаша з жабкою',lesson:'У кам\u2019яній чаші хвиля повертається знову і знову. Жабці треба пережити всі відбиття.',pond:[60,60,52,52],base:30,rocks:[[60,59,7]],lilies:[[59,24],[31,76],[86,78]],quiet:[[53,91]],T:0.0848,Tq:0.0779,hint:[42,33,13],best:[38,29]},
+{name:'Хребет і жабки',lesson:'Підводний хребет веде хвилю до далекого латаття повз двох жабок.',pond:[60,60,56,50],reeds:1,base:30,bars:[[40,60,0.85,90],[56,60,0.85,90],[72,60,0.85,90],[88,60,0.85,90]],lilies:[[98,60],[42,29]],quiet:[[58,85],[86,31]],T:0.0626,Tq:0.0549,hint:[21,57,13],best:[17,53]},
+{name:'Щедрик двічі',lesson:'Мотив «Щедрика» починається вдруге. Скеля затримує одну з нот.',pond:[60,60,51,55],reeds:1,base:30,rocks:[[44,56,8]],lilies:[[60,32],[38,42],[83,52],[70,66],[47,77],[62,97]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392,466.16,440],on:[0,2,3,4,6,8],unit:18,tol:8},hint:[56,17,13],best:[60,13]},
+{name:'Дзвіночки',lesson:'Усі шість нот однакові, важить лише ритм: три ноти, пауза, ще три. Три ноти сховані за стіною.',pond:[60,60,55,51],reeds:1,base:30,walls:[[62,116,62,72,2.2],[62,48,62,4,2.2]],lilies:[[34,60],[36,81],[45,34],[76,60],[77,78],[91,46]],T:0.012,tune:{title:'ритм дзвіночків',f:[329.63,329.63,329.63,329.63,329.63,329.63],on:[0,1,2,4,5,6],unit:22,tol:9},hint:[18,57,13],best:[14,61]},
+{name:'Ода на плесі',lesson:'Знову «Ода до радості», але на шляху мілина, яма і скеля.',pond:[60,60,51,55],reeds:1,base:30,rocks:[[60,58,7]],bars:[[42,70,0.9,200],[80,50,-1,240]],lilies:[[60,84],[38,84],[89,73],[48,56],[84,38],[61,30]],T:0.012,tune:{title:'«Оду до радості»',f:[329.63,329.63,349.23,392,392,349.23],on:[0,1,2,3,4,5],unit:24,tol:10},hint:[56,98,13],best:[60,102]},
+{name:'Тихе плесо',lesson:'Останній ставок: чотири латаття, дві жабки і все, що ви вже бачили.',pond:[60,60,56,55],base:2.6,lands:[[61,61,9]],rocks:[[32,40,7],[86,83,7]],walls:[[60,76,60,110,2.2]],bars:[[87,53,0.8,200],[29,87,-1,220]],weeds:[[47,25,9]],lilies:[[23,60],[73,20],[101,63],[45,101]],quiet:[[80,97],[94,39]],T:0.0465,Tq:0.0459,hint:[27,42,13],best:[23,38]}];
 const $=id=>document.getElementById(id);
 const stage=$('stage'),glc=$('gl'),ov=$('ov'),g=ov.getContext('2d'),finEl=$('fin'),card=$('card');
 const gl=glc.getContext('webgl2',{antialias:false});
@@ -243,7 +265,7 @@ const say=t=>$('msg').textContent=t;
 const SPEED=150,LAST=LEVELS.length-1;
 let lvI=0,T=0.068,state='card',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
 let camK=0,camGoal=0,camDur=1.8,theta=0,finT=0,ringT=0,tscale=1,fin=0,finGoal=0,phase='',dropAt=null;
-let disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[],closing=false;
+let disp=[0,0,0,0,0,0],wasLit=[0,0,0,0,0,0],bursts=[],litOrder=[],closing=false;
 let specks=[],fall=null,spray=[];
 function seed(){specks=[];let g2=0;while(specks.length<150&&g2++<4000){const x=2+Math.random()*(N-4),y=2+Math.random()*(N-4);if(!blk[(y|0)*N+(x|0)])specks.push({x,y,hx:x,hy:y})}}
 let hover=null,isDown=false,tt=null,ttKey='',lastRes=null,stars=0,lastJ=null;
@@ -283,7 +305,7 @@ $('listen').style.display=$('clisten').style.display=L.tune?'inline-block':'none
 seed();reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
 function begin(){if(state!=='card')return;card.classList.remove('on');state='idle';idleText()}
 function idleText(){if(LEVELS[lvI].tune){say('Знайдіть місце, звідки хвиля торкнеться латать у порядку мелодії. Порядок кольорів і ритм показано вгорі в рядку «треба».');return}say(lvI===0&&!tries?'Торкніться води біля латаття: упаде крапля, і хвиля його розкриє.':'Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
-function reset(){simReset();if(state!=='card')state='idle';splash=null;fall=null;spray=[];wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
+function reset(){simReset();if(state!=='card')state='idle';splash=null;fall=null;spray=[];wasLit=[0,0,0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
 stage.classList.remove('fin');finEl.classList.remove('on');$('rep').classList.remove('on');$('next').style.display='none';if(state==='idle'){idleText();if(hintLv)showHint()}}
 function showHint(){if(hintLv===1)say('Підказка 1: '+LEVELS[lvI].lesson);
 if(hintLv===2)say('Підказка 2: шукайте місце всередині жовтого кола.');
@@ -292,9 +314,9 @@ function hint(){if(state==='card')return;if(hintLv<3)hintLv++;if(state!=='idle')
 function startFall(x,y){fall={x,y,t:0};state='fall';say('Крапля падає…')}
 function drop(x,y){fall=null;spray=[];for(let k=0;k<14;k++){const a=Math.random()*6.283,v=18+Math.random()*30;spray.push({a,v})}simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
 function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
-function score(){if(!marks.length)return;const m=marks[marks.length-1];if(LV.tune){const j=judge();m.s=j.ok?1:Math.max(0.2,0.95-j.err/70)}else m.s=Math.min(...MX)/T}
+function score(){if(!marks.length)return;const m=marks[marks.length-1];if(LV.tune){const j=judge();m.s=j.ok?1:Math.max(0.2,0.95-j.err/70)}else m.s=woke()?0.5:Math.min(...MX)/T}
 function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;score();doneSet.add(lvI);store.set('pleso-done2',[...doneSet].join(','));paintLv();
-const n=BUOYS.length;$('fint').textContent=n===1?'Латаття розкрилося':n===2?'Обидва розкрилися':n===3?'Усі три розкрилися':'Усі чотири розкрилися';
+const n=BUOYS.length;$('fint').textContent=n===1?'Латаття розкрилося':n===2?'Обидва розкрилися':n===3?'Усі три розкрилися':n===4?'Усі чотири розкрилися':'Усі латаття розкрилися';
 $('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;
 if(LV.tune){$('fint').textContent='Ставок зіграв '+LV.tune.title;$('fins').textContent='★'.repeat(stars)+'☆'.repeat(3-stars)+(stars===3?'  ритм точний':stars===2?'  ритм майже точний':'  порядок правильний, ритм ще можна вирівняти')}
 say(LV.tune?'Мелодія прозвучала правильно.':'Хвиля підняла всі латаття до межі, і вони розкрилися.');$('next').style.display='inline-block';$('next').firstChild.textContent=lvI<LAST?'Далі':'З початку';
@@ -316,10 +338,10 @@ const L=LEVELS[lvI];
 g.fillStyle='rgba(235,240,215,.42)';for(const q of specks){const i=(q.y|0)*N+(q.x|0);if(!blk[i]&&!blk[i+1]&&!blk[i-1]&&!blk[i+N]&&!blk[i-N]){q.x-=(U[i+1]-U[i-1])*9;q.y-=(U[i+N]-U[i-N])*9}q.x+=(q.hx-q.x)*.012;q.y+=(q.hy-q.y)*.012;if(blk[(q.y|0)*N+(q.x|0)]){q.x=q.hx;q.y=q.hy}g.fillRect((q.x+.5)*K-px,(q.y+.5)*K-px,2*px,2*px)}
 for(const m of marks){const a=(m.x+.5)*K,b=(m.y+.5)*K;g.beginPath();g.arc(a,b,4.2*px,0,7);g.fillStyle=heat(m.s);g.fill();g.lineWidth=1.4*px;g.strokeStyle='rgba(8,24,32,.8)';g.stroke()}
 if(L.tune){const t=L.tune;BUOYS.forEach(([x,y],k)=>{g.strokeStyle=PITCH[t.f[k]];g.lineWidth=3*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,6.3*K,0,7);g.stroke()});
-const w=250*px,h=50*px,x0=(size-w)/2,y0=10*px,ux=42*px;g.fillStyle='rgba(8,24,32,.72)';g.beginPath();g.roundRect(x0,y0,w,h,10*px);g.fill();
+const w=250*px,h=50*px,x0=(size-w)/2,y0=L.best[1]<40?size-60*px:10*px,ux=Math.min(42,168/t.on[t.on.length-1])*px;g.fillStyle='rgba(8,24,32,.72)';g.beginPath();g.roundRect(x0,y0,w,h,10*px);g.fill();
 g.font=Math.round(11*px)+'px system-ui,sans-serif';g.textAlign='left';g.textBaseline='middle';g.fillStyle='#a9c3ce';g.fillText('треба',x0+10*px,y0+15*px);g.fillText('вийшло',x0+10*px,y0+35*px);
 t.f.forEach((f,i)=>{g.fillStyle=PITCH[f];g.beginPath();g.arc(x0+66*px+t.on[i]*ux,y0+15*px,5.5*px,0,7);g.fill()});
-const got=BUOYS.map((_,k)=>k).filter(k=>ARR[k]).sort((a,b)=>ARR[a]-ARR[b]);got.forEach(k=>{const u=(ARR[k]-ARR[got[0]])/t.unit;if(u>4.3)return;g.fillStyle=PITCH[t.f[k]];g.beginPath();g.arc(x0+66*px+u*ux,y0+35*px,5.5*px,0,7);g.fill()});
+const got=BUOYS.map((_,k)=>k).filter(k=>ARR[k]).sort((a,b)=>ARR[a]-ARR[b]);got.forEach(k=>{const u=(ARR[k]-ARR[got[0]])/t.unit;if(u>t.on[t.on.length-1]+0.3)return;g.fillStyle=PITCH[t.f[k]];g.beginPath();g.arc(x0+66*px+u*ux,y0+35*px,5.5*px,0,7);g.fill()});
 if(state==='done'&&lastJ)lastJ.ord.forEach((k,i)=>label(String(i+1),(BUOYS[k][0]+.5)*K,(BUOYS[k][1]+.5)*K-9.5*K,px,PITCH[t.f[k]]))}
 if(hintLv>=2&&state==='idle'){g.strokeStyle='rgba(250,199,117,.95)';g.lineWidth=2.5*px;g.setLineDash([8*px,6*px]);g.beginPath();g.arc(L.hint[0]*K,L.hint[1]*K,L.hint[2]*K,0,7);g.stroke();g.setLineDash([])}
 if(hintLv>=3&&state==='idle'){g.fillStyle='#FAC775';g.beginPath();g.arc((L.best[0]+.5)*K,(L.best[1]+.5)*K,5*px,0,7);g.fill();g.strokeStyle='#412402';g.lineWidth=1.5*px;g.stroke()}
@@ -332,6 +354,10 @@ const ph=(now/1000*40)%40;g.lineWidth=2*px;for(let k=0;k<7;k++){const lv=ph+k*40
 g.strokeStyle='#fff';g.lineWidth=2*px;g.beginPath();g.arc(cx,cy,5*px,0,7);g.stroke()}
 else{for(const[x,y]of BUOYS)if(Math.hypot(x-hx,y-hy)<16){g.fillStyle='rgba(240,120,110,.16)';g.strokeStyle='rgba(240,120,110,.7)';g.lineWidth=1.5*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,16*K,0,7);g.fill();g.stroke()}
 g.strokeStyle='rgba(240,120,110,.95)';g.lineWidth=2.5*px;const r=6*px;g.beginPath();g.moveTo(cx-r,cy-r);g.lineTo(cx+r,cy+r);g.moveTo(cx+r,cy-r);g.lineTo(cx-r,cy+r);g.stroke()}}}
+QS.forEach(([x,y],k)=>{const cx=(x+.5)*K,cy=(y+.5)*K,up=state==='done'&&MQ[k]>=LV.Tq;g.fillStyle='rgba(40,110,45,.95)';g.beginPath();g.arc(cx,cy,3.4*K,0.5,6.6);g.lineTo(cx,cy);g.fill();g.strokeStyle='rgba(15,50,20,.8)';g.lineWidth=1.2*px;g.stroke();
+g.font=Math.round(3.9*K)+'px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText('🐸',cx,cy+0.2*K);
+if(up)label('!',cx+3.6*K,cy-3.6*K,px,'#ff8a7a');else if(state!=='done'||MQ[k]<LV.Tq){const ph=(now/900+k*0.4)%1;g.font='600 '+Math.round((9+4*ph)*px)+'px system-ui,sans-serif';g.fillStyle='rgba(255,255,255,'+(0.75*(1-ph))+')';g.fillText('z',cx+(3+2*ph)*K,cy-(2.5+3*ph)*K)}
+if(state==='done')label(Math.min(999,Math.round(MQ[k]/LV.Tq*100))+'%',cx,cy+6.5*K,px,MQ[k]>=LV.Tq?'#ff8a7a':'#9df0b8')});
 if(state==='done'&&lastRes)BUOYS.forEach(([x,y],k)=>{const f=lastRes[k];label(f>=1?'✓':Math.min(99,Math.round(f*100))+'%',(x+.5)*K,(y+.5)*K-8.5*K,px,f>=1?'#9df0b8':heat(f))});
 if(fall){const a=Math.min(1,fall.t/0.24),cx=(fall.x+.5)*K,cy=(fall.y+.5)*K,off=(1-a)*(1-a)*46*px;g.fillStyle='rgba(4,16,24,'+(0.12+0.3*a)+')';g.beginPath();g.ellipse(cx,cy,(9-5*a)*px,(6-3*a)*px,0,0,7);g.fill();
 g.fillStyle='rgba(235,247,255,.95)';g.beginPath();g.ellipse(cx-off*.35,cy-off,(3.2+1.6*(1-a))*px,(4.4+3*(1-a))*px,0.3,0,7);g.fill()}
@@ -345,12 +371,12 @@ function camera(){const k=ease(camK),el=(90-68*k)*Math.PI/180,d=Math.exp(Math.lo
 const tg=[60,60-3*k,0],cp=[tg[0]+d*Math.cos(el)*Math.sin(th),tg[1]+d*Math.cos(el)*Math.cos(th),d*Math.sin(el)];
 const w=Math.min(1,k*5),up=[0,-(1-w),w],ul=Math.hypot(up[1],up[2]);
 gl.uniform3f(U_.uCP,cp[0],cp[1],cp[2]);gl.uniform3f(U_.uCT,tg[0],tg[1],tg[2]);gl.uniform3f(U_.uUp,0,up[1]/ul,up[2]/ul);gl.uniform1f(U_.uF,d/ex);gl.uniform1f(U_.uTilt,Math.min(1,k*1.5));gl.uniform1f(U_.uFin,fin)}
-function steps(dt,limit){acc+=dt*SPEED*tscale;let n=0;while(acc>=1&&(!limit||STEP<STEPS)&&n<12){simTick();acc-=1;n++}if(acc>3)acc=0}
+function steps(dt,limit){acc+=dt*SPEED*tscale;let n=0;while(acc>=1&&(!limit||STEP<STEPS)&&n<(tscale>1?36:12)){simTick();acc-=1;n++}if(acc>3)acc=0}
 function finale(dt,now){finT+=dt;
 if(phase==='A'){tscale=Math.max(0.14,1-finT/0.3*0.86);steps(dt);const n=Math.floor(finT/0.28);if(n>win.n&&win.n<BUOYS.length){const b=BUOYS[litOrder[win.n]??win.n];bursts.push({x:b[0],y:b[1],t:0});win.n++}
 if(finT>0.35+0.28*BUOYS.length){phase='B';finT=0;camGoal=1;camDur=1.9;finGoal=0.45;closing=lvI===LAST;stage.classList.add('fin')}}
 else if(phase==='B'){const f=Math.pow(0.02,dt);for(let i=0;i<N*N;i++){U[i]*=f;P[i]*=f}if(camGoal)theta+=dt*0.1;
-if(finT>2.1){if(lvI<LAST){phase='D';finT=0;finGoal=0.55}else{simReset();wasLit=[0,0,0,0];litOrder=[];closing=false;simDrop(dropAt[0],dropAt[1]);phase='C';finT=0;tscale=LV.tune?1:0.5;$('rep').classList.add('on')}}}
+if(finT>2.1){if(lvI<LAST){phase='D';finT=0;finGoal=0.55}else{simReset();wasLit=[0,0,0,0,0,0];litOrder=[];closing=false;simDrop(dropAt[0],dropAt[1]);phase='C';finT=0;tscale=LV.tune?1:0.5;$('rep').classList.add('on')}}}
 else if(phase==='C'){theta+=dt*0.1;steps(dt,true);if(MX.every(v=>v>=T)||STEP>=STEPS){phase='D';finT=0;finGoal=1;$('rep').classList.remove('on')}}
 else{theta+=dt*0.11;tscale=finT<1.3?0.12:Math.min(0.5,0.12+(finT-1.3)*0.3);steps(dt);
 if(ringT<0&&finT>0.5){BUOYS.forEach(([x,y])=>ring(x,y,0.5));ringT=finT}
@@ -364,14 +390,15 @@ BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLi
 const pop=wasLit[k]&&!closing?0.22*Math.exp(-(now-wasLit[k])/260):0,tg=closing?0:(f>=1?1:Math.pow(f,2.4)*0.9);disp[k]+=(tg-disp[k])*Math.min(1,dt*(closing?3:7));BUOYS[k].show=Math.max(0,disp[k])+pop});
 if(state==='fall'&&fall){fall.t+=dt;if(fall.t>=0.24)drop(fall.x,fall.y)}
 if(state==='win')finale(dt,now);
-else if(state==='run'){steps(dt,true);if(MX.every(v=>v>=T)){if(!LV.tune)win();else{const j=judge();lastJ=j;if(j.ok){stars=j.err<=7?3:j.err<=13?2:1;win()}else{state='done';score();say((j.ord.every((k,i)=>LV.tune.f[k]===LV.tune.f[i])?'Порядок правильний, але ритм не той: порівняйте смужки «треба» і «вийшло» вгорі.':'Ноти прозвучали не в тому порядку. Цифри біля латать показують, як вийшло.')+' Торкніться води або натисніть «Ще раз».')}}}
+else if(state==='run'){steps(dt,true);if(woke()){state='done';score();lastRes=MX.map(v=>v/T);say('Жабка прокинулася: хвиля біля неї була зависока. Знайдіть місце, звідки хвиля дійде до латать, але обмине жабку. Торкніться води або натисніть «Ще раз».')}
+else if(MX.every(v=>v>=T)){if(!LV.tune){if(!QS.length||STEP>=STEPS)win();else{tscale=3;say('Латаття розкрилися. Тихо: хвиля ще не вщухла біля жабки…')}}else{const j=judge();lastJ=j;if(j.ok){stars=j.err<=7?3:j.err<=13?2:1;win()}else{state='done';score();say((j.ord.every((k,i)=>LV.tune.f[k]===LV.tune.f[i])?'Порядок правильний, але ритм не той: порівняйте смужки «треба» і «вийшло» вгорі.':'Ноти прозвучали не в тому порядку. Цифри біля латать показують, як вийшло.')+' Торкніться води або натисніть «Ще раз».')}}}
 else if(STEP>=STEPS&&LV.tune){state='done';score();lastJ=judge();say('Хвиля не дійшла до всіх латать. Спробуйте з іншого місця.')}
 else if(STEP>=STEPS){state='done';score();lastRes=MX.map(v=>v/T);const lit=MX.filter(v=>v>=T).length,low=Math.min(99,Math.round(Math.min(...lastRes)*100));
 say((BUOYS.length>1?'Розкрилося '+lit+' з '+BUOYS.length+'. Найслабша хвиля дала ':'Хвиля дала ')+low+'% потрібної висоти. '+(low>=85?'Майже! Посуньте краплю зовсім трохи.':'Спробуйте з іншого місця.')+' Торкніться води або натисніть «Ще раз».')}}
 else if(state==='done'&&STEP<STEPS*3){simTick();simTick()}
 if(splash)splash.t+=dt*2;
 if(gl){gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,N,N,gl.RED,gl.FLOAT,U);gl.uniform1f(U_.uT,now/1000);
-const b=new Float32Array(16).fill(-999),lt=new Float32Array(4).fill(99);BUOYS.forEach(([x,y],k)=>{b[k*4]=x+.5;b[k*4+1]=y+.5;b[k*4+2]=BUOYS[k].show||0;const on=wasLit[k]&&!closing;b[k*4+3]=on?1:0;if(on)lt[k]=(now-wasLit[k])/1000});for(let k=BUOYS.length;k<4;k++){b[k*4+2]=0;b[k*4+3]=0}
+const b=new Float32Array(24).fill(-999),lt=new Float32Array(6).fill(99);BUOYS.forEach(([x,y],k)=>{b[k*4]=x+.5;b[k*4+1]=y+.5;b[k*4+2]=BUOYS[k].show||0;const on=wasLit[k]&&!closing;b[k*4+3]=on?1:0;if(on)lt[k]=(now-wasLit[k])/1000});for(let k=BUOYS.length;k<6;k++){b[k*4+2]=0;b[k*4+3]=0}
 gl.uniform4fv(U_.uB,b);gl.uniform1fv(U_.uLt,lt);camera();gl.drawArrays(gl.TRIANGLES,0,3)}
 overlay(now);requestAnimationFrame(frame)}
 function cell(e){const r=stage.getBoundingClientRect();return[Math.floor((e.clientX-r.left)/r.width*N),Math.floor((e.clientY-r.top)/r.height*N)]}
@@ -380,7 +407,7 @@ stage.addEventListener('pointerdown',e=>{if(e.target.closest('#card'))return;isD
 stage.addEventListener('pointerleave',()=>{hover=null;isDown=false});
 stage.addEventListener('pointerup',e=>{if(!isDown)return;isDown=false;if(state==='done'){reset();if(e.pointerType!=='mouse')hover=null;return}if(state!=='idle'||camK>0.01)return;const[x,y]=cell(e);if(e.pointerType!=='mouse')hover=null;
 if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x]){say('Сюди кинути не можна. Киньте краплю у воду.');return}
-if(!canDrop(x,y)){say('Занадто близько до латаття. Киньте краплю трохи далі.');return}startFall(x,y)});
+if(!canDrop(x,y)){say('Занадто близько до латаття або жабки. Киньте краплю трохи далі.');return}startFall(x,y)});
 $('listen').onclick=$('clisten').onclick=listen;$('again').onclick=reset;$('hint').onclick=hint;$('next').onclick=next;$('cgo').onclick=begin;
 $('snd').onclick=()=>{muted=!muted;store.set('pleso-mute',muted?'1':'0');sndLabel();if(!muted)tone(NOTES[0],0,0.5,0.08)};sndLabel();
 addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;

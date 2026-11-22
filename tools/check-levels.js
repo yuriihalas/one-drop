@@ -10,9 +10,9 @@ const levelsSrc = 'const LEVELS=' + html.split('const LEVELS=')[1].split('}];')[
 const ctx = { Math, Float32Array, Uint8Array, Int32Array };
 vm.createContext(ctx);
 vm.runInContext(core + '\n' + levelsSrc +
-  '\nthis.api={buildLevel,simReset,simDrop,simTick,canDrop,judge,get MX(){return MX},N,STEPS,LEVELS};', ctx);
+  '\nthis.api={buildLevel,simReset,simDrop,simTick,canDrop,judge,woke,get MX(){return MX},N,STEPS,LEVELS};', ctx);
 const A = ctx.api;
-const run = (x, y) => { A.simReset(); A.simDrop(x, y); for (let s = 0; s < A.STEPS; s++) A.simTick(); return Math.min(...A.MX); };
+const run = (x, y) => { A.simReset(); A.simDrop(x, y); for (let s = 0; s < A.STEPS; s++) A.simTick(); return A.woke() ? 0 : Math.min(...A.MX); }; // a woken frog loses the level
 // Melody levels are judged by the order and rhythm of arrivals, not by height:
 // 2 means right order with exact rhythm, 1 means the melody is accepted, 0 means it is not.
 const runTune = (x, y) => { run(x, y); const j = A.judge(); return j.ok ? (j.err <= 7 ? 2 : 1) : 0; };
