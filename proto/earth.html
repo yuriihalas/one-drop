@@ -8,25 +8,26 @@
 // is touched goes all at once, the scarp it leaves eats its way uphill until rock or roots stop it, and whatever
 // it lands on starts moving too. Among trees the ground holds to a steeper angle whether it is standing or
 // arriving, so a forest swallows a small slide; buried deeper than a trunk can bear, the trees snap and go with
-// the rest. Water lowers both angles, so wet ground runs far.
-const G = 96, STAT = 1.0, DYN = 0.55, RATE = 0.22, ROOT = 1.5, SNAP = 3, WSTAT = 0.8, WDYN = 0.28;
+// the rest. Water lowers both angles, so wet ground runs far. Snow lies steep while it is still and slides on
+// almost nothing once it moves, so an avalanche runs far across gentle ground and pushes snow into what it meets.
+const G = 96, STAT = 1.0, DYN = 0.55, RATE = 0.22, ROOT = 1.5, SNAP = 3, WSTAT = 0.8, WDYN = 0.28, SSTAT = 0.9, SDYN = 0.17;
 const rock = new Float32Array(G), soil = new Float32Array(G), soil0 = new Float32Array(G), dq = new Float32Array(G), act = new Uint8Array(G), wet = new Uint8Array(G), tree = new Uint8Array(G), moved = new Float32Array(G);
 let stepN = 0, moving = 0, LVS = null, buried = -1;
 const lerp = (pts, x) => { for (let k = 1; k < pts.length; k++) if (x <= pts[k][0]) { const a = pts[k - 1], b = pts[k]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0] || 1); } return pts[pts.length - 1][1]; };
 function slideBuild(L) { LVS = L; stepN = 0; moving = 0; buried = -1; act.fill(0); wet.fill(0); tree.fill(0); soil.fill(0); moved.fill(0);
   for (let x = 0; x < G; x++) rock[x] = lerp(L.rock, x);
-  for (const s of L.slabs) for (let x = s[0]; x <= s[1]; x++) { soil[x] = s[2]; if (s[3]) wet[x] = 1; }
+  for (const s of L.slabs) for (let x = s[0]; x <= s[1]; x++) { soil[x] = s[2]; wet[x] = s[3] || 0; }
   for (const t of L.trees || []) for (let x = t[0]; x <= t[1]; x++) tree[x] = 1;
   soil0.set(soil); }
 const H = x => rock[x] + soil[x];
-const statOf = x => wet[x] ? WSTAT : STAT, dynOf = x => wet[x] ? WDYN : DYN;
+const statOf = x => wet[x] === 2 ? SSTAT : wet[x] ? WSTAT : STAT, dynOf = x => wet[x] === 2 ? SDYN : wet[x] ? WDYN : DYN; // wet: 0 dry, 1 wet, 2 snow
 function canSlide(x) { if (soil[x] < 0.5) return false; for (const n of [x - 1, x + 1]) if (n >= 0 && n < G && H(x) - H(n) > dynOf(x)) return true; return false; }
 function slideTap(x) { for (let d = -2; d <= 2; d++) { const X = x + d; if (X >= 0 && X < G && soil[X] > 0.2) { act[X] = 40; tree[X] = 0; } } }
 function slideStep() { stepN++; moving = 0; dq.fill(0);
   for (let x = 0; x < G; x++) { if (soil[x] <= 0.001) continue; let left = soil[x];
     for (const n of [x + 1, x - 1]) { if (n < 0 || n >= G) continue; const d = H(x) - H(n); if (tree[x] && d > ROOT + 0.04 && soil[n] < soil0[n] - 0.3) { tree[x] = 0; act[x] = 14; } /* the ground below it slipped away: the tree is undercut and goes */
       const lim = tree[x] ? ROOT + 0.04 : act[x] ? dynOf(x) + 0.04 : statOf(x); if (d <= lim) continue; // a little friction to stop: moving ground comes to rest just above its angle
-      const q = Math.min(left, RATE * (d - (tree[x] ? ROOT : dynOf(x)))); if (q <= 0) continue; left -= q; dq[x] -= q; dq[n] += q; act[x] = 14; if (!tree[n]) act[n] = 14; if (wet[x] && q > 0.004) wet[n] = 1; } }
+      const q = Math.min(left, RATE * (d - (tree[x] ? ROOT : dynOf(x)))); if (q <= 0) continue; left -= q; dq[x] -= q; dq[n] += q; act[x] = 14; if (!tree[n]) act[n] = 14; if (wet[x] > wet[n] && q > 0.004) wet[n] = wet[x]; } }
   for (let x = 0; x < G; x++) { if (dq[x]) { soil[x] = Math.max(0, soil[x] + dq[x]); moved[x] += Math.abs(dq[x]); }
     if (tree[x] && soil[x] - soil0[x] > SNAP) { tree[x] = 0; act[x] = 14; } /* buried deeper than a trunk can bear */ if (act[x]) { act[x]--; moving++; } }
   for (const h of LVS.houses || []) { let m = 0; for (let d = -2; d <= 2; d++) m += soil[h + d] - soil0[h + d]; if (m / 5 > 1.0) buried = h; } }
@@ -34,9 +35,20 @@ function slideVerdict() { if (buried >= 0) return -1; if (moving || stepN < 3) r
 const LEVELS = [
   {"name": "Пласт", "rock": [[0, 94], [5, 94], [6, 86], [24, 68.9], [25, 75.9], [29, 75.9], [30, 66], [48, 48.9], [49, 55.9], [50, 55.9], [51, 46], [65, 32.7], [66, 38.7], [67, 38.7], [68, 25], [74, 25], [75, 33], [95, 33]], "slabs": [[6, 24, 7], [30, 48, 7], [51, 65, 6]], "fill": [68, 74, 29], "houses": [27], "text": "Земля на схилі лежить пластами, і кожен спирається на кам’яний поріг. Зрушений пласт осідає до пологішого кута; зайве перелітає через поріг і тягне за собою все, на що впаде. Засипте яр до мітки й не засипте хату.", "bx": 39},
   {"name": "Ліс тримає схил", "rock": [[0, 96], [5, 96], [6, 90], [20, 76.7], [21, 83.7], [22, 83.7], [23, 74], [45, 53.1], [46, 57.7], [47, 57.7], [48, 48], [62, 34.7], [63, 40.7], [64, 40.7], [65, 25], [70, 25], [71, 33], [95, 33]], "slabs": [[6, 20, 7], [23, 45, 6], [48, 62, 6]], "trees": [[23, 45]], "fill": [65, 70, 29], "houses": [84], "text": "Коріння тримає схил: ліс ковтає осув, що прийшов згори. Та якщо земля піде з-під нижніх дерев, ліс підрізано, і він падає ряд за рядом. Засипте яр до мітки.", "bx": 43},
-  {"name": "Мокрий схил", "rock": [[0, 30], [7, 30], [8, 25], [14, 25], [15, 30], [30, 30], [31, 39], [32, 39], [33, 32], [53, 51], [54, 63.3], [55, 63.3], [56, 58], [66, 65], [67, 80], [70, 80], [71, 70], [85, 56.7], [86, 62.7], [87, 62.7], [88, 45], [95, 45]], "slabs": [[33, 53, 7], [56, 66, 6, 1], [71, 85, 6]], "fill": [8, 14, 28.5], "houses": [92], "text": "Мокра земля, темна й блискуча, тече набагато далі за суху й мочить усе, на що лягає. Яма далеко від підніжжя: сухий осув до неї не дотягне. Засипте яму до мітки й не чіпайте схил над хатою.", "bx": 61}];
+  {"name": "Мокрий схил", "rock": [[0, 30], [7, 30], [8, 25], [14, 25], [15, 30], [30, 30], [31, 39], [32, 39], [33, 32], [53, 51], [54, 63.3], [55, 63.3], [56, 58], [66, 65], [67, 80], [70, 80], [71, 70], [85, 56.7], [86, 62.7], [87, 62.7], [88, 45], [95, 45]], "slabs": [[33, 53, 7], [56, 66, 6, 1], [71, 85, 6]], "fill": [8, 14, 28.5], "houses": [92], "text": "Мокра земля, темна й блискуча, тече набагато далі за суху й мочить усе, на що лягає. Яма далеко від підніжжя: сухий осув до неї не дотягне. Засипте яму до мітки й не чіпайте схил над хатою.", "bx": 61},
+  {"name": "Лавина", "rock": [[0, 92], [4, 92], [5, 86], [22, 72], [23, 78], [24, 78], [25, 70], [40, 56], [41, 61], [42, 61], [43, 55], [63, 44], [79, 38], [80, 24], [88, 24], [89, 34], [95, 34]], "slabs": [[5, 22, 3, 2], [25, 40, 5]], "fill": [80, 88, 29], "houses": [92], "text": "Сніг лежить на схилі круто, поки його не зрушили, а зрушений ковзає майже без тертя й біжить далеко рівниною, захоплюючи все на шляху. Суха земля так далеко не дійде. Засипте западину й не засипте хату за нею.", "bx": 12},
+  {"name": "Сніг над лісом", "rock": [[0, 92], [4, 92], [5, 86], [22, 72], [23, 78], [24, 78], [25, 70], [40, 56], [41, 61], [42, 61], [43, 55], [63, 44], [79, 38], [80, 24], [88, 24], [89, 34], [95, 34]], "slabs": [[5, 22, 3, 2], [25, 40, 4], [43, 62, 3]], "trees": [[43, 62]], "fill": [80, 88, 29], "houses": [92], "text": "Нижче на схилі ліс. Сухий осув він ковтне, а снігова лавина ламає дерева, тягне їх за собою й біжить далі. Засипте западину до мітки.", "bx": 12}];
 // ---- drawing: a cut through the mountain. Sky and far ridges are painted once; rock, soil, trees and dust every frame.
-const tree0 = new Uint8Array(G); let back = null, backKey = '', dust = [], lastNow = 0;
+const tree0 = new Uint8Array(G), fell = new Uint8Array(G); let back = null, backKey = '', rockC = null, dust = [], birds = [], lastNow = 0, gold = 0;
+function paintRock(size, K) { // strata that dip to the right in warm and cool bands, speckled, with cracks; clipped to the rock
+  const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d'), r = rng(51 + LEVELS.indexOf(LVS) * 9);
+  g.beginPath(); g.moveTo(0, size); for (let x = 0; x < G; x++) g.lineTo((x + 0.5) * K, (G - rock[x]) * K); g.lineTo(size, (G - rock[G - 1]) * K); g.lineTo(size, size); g.closePath(); g.clip();
+  const cols = ['#7b7266', '#8a7f6d', '#6c675f', '#94866f', '#5f5b55', '#857a68', '#70695e'];
+  for (let k = -30; k < 70; k++) { const y0 = k * 2.2 * K; g.fillStyle = cols[(k % cols.length + cols.length) % cols.length]; g.beginPath(); g.moveTo(0, y0); for (let x = 0; x <= G; x += 4) g.lineTo(x * K, y0 + x * 0.32 * K + Math.sin(x * 0.15 + k) * K * 0.5); g.lineTo(size, size * 2); g.lineTo(0, size * 2); g.closePath(); g.fill(); }
+  for (let k = 0; k < 2600; k++) { const x = r() * size, y = r() * size; g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.08)'; g.fillRect(x, y, K * (0.2 + r() * 0.5), K * (0.15 + r() * 0.3)); }
+  const sh = g.createLinearGradient(0, 0, 0, size); sh.addColorStop(0, 'rgba(255,230,190,.1)'); sh.addColorStop(1, 'rgba(0,0,0,.45)'); g.fillStyle = sh; g.fillRect(0, 0, size, size);
+  g.strokeStyle = 'rgba(20,16,12,.4)'; g.lineWidth = Math.max(1, K * 0.16); for (let k = 0; k < 45; k++) { let x = r() * size, y = r() * size; g.beginPath(); g.moveTo(x, y); for (let q = 0; q < 4; q++) { x += (r() - 0.4) * 2.6 * K; y += (0.8 + r() * 2) * K; g.lineTo(x, y); } g.stroke(); }
+  return c; }
 function paintBack(size, K) { const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d'), r = rng(3 + LEVELS.indexOf(LVS) * 17);
   const sky = g.createLinearGradient(0, 0, 0, size); sky.addColorStop(0, '#16233f'); sky.addColorStop(0.45, '#4a5f8c'); sky.addColorStop(0.72, '#d99f7a'); sky.addColorStop(1, '#f0c890'); g.fillStyle = sky; g.fillRect(0, 0, size, size);
   const sun = g.createRadialGradient(size * 0.78, size * 0.62, 0, size * 0.78, size * 0.62, size * 0.4); sun.addColorStop(0, 'rgba(255,236,190,.9)'); sun.addColorStop(0.12, 'rgba(255,210,150,.45)'); sun.addColorStop(1, 'rgba(255,200,140,0)'); g.fillStyle = sun; g.fillRect(0, 0, size, size);
@@ -46,38 +58,45 @@ function paintBack(size, K) { const c = document.createElement('canvas'); c.widt
   g.fillStyle = 'rgba(240,200,150,.12)'; g.fillRect(0, size * 0.55, size, size * 0.45); return c; }
 const X = (x, K) => (x + 0.5) * K, Y = (h, K) => (G - h) * K;
 Proto({
-  G, levels: LEVELS, speed: 10, idleText: 'Торкніться схилу: там земля зрушить.',
-  build(L) { slideBuild(L); tree0.set(tree); L.best = [L.bx, Math.round(G - H(L.bx)) - 2]; dust = []; backKey = ''; },
+  G, levels: LEVELS, speed: 10, slowmo: 0.35, idleText: 'Торкніться схилу: там земля зрушить.',
+  build(L) { slideBuild(L); tree0.set(tree); fell.fill(0); birds = []; L.best = [L.bx, Math.round(G - H(L.bx)) - 2]; dust = []; backKey = ''; },
   tap(x) { if (!canSlide(x)) { this.say('Тут нема чому зрушити: голий камінь або рівне місце.'); return false; } slideTap(x); this.say('Пішло…'); },
   step: slideStep, verdict: slideVerdict,
   winText: () => 'Засипано до мітки' + ((LVS.houses || []).length ? ', хата ціла.' : '.'),
-  failText: () => buried >= 0 ? 'Осув засипав хату.' : 'Землі зрушило замало: до мітки не досипало.',
+  failText: () => buried >= 0 ? 'Осув засипав хату.' : 'До мітки не досипало: осув зупинився раніше.',
   draw(g, K, now, size) {
     const key = size + ':' + LEVELS.indexOf(LVS); if (key !== backKey) { back = paintBack(size, K); backKey = key; } g.drawImage(back, 0, 0); const dt = Math.min(0.25, (now - lastNow) / 1000); lastNow = now;
     for (const h of LVS.houses || []) Art.house(g, X(h, K), Y(rock[h], K) + K * 0.2, K * 0.82, { lit: buried !== h, now });
-    // rock: strata that dip to the right, lighter where the sun catches the top
-    const trace = f => { g.beginPath(); g.moveTo(0, size); g.lineTo(0, Y(f(0), K)); for (let x = 0; x < G; x++) g.lineTo(X(x, K), Y(f(x), K)); g.lineTo(size, Y(f(G - 1), K)); g.lineTo(size, size); g.closePath(); };
-    trace(x => rock[x]); const rg = g.createLinearGradient(0, 0, 0, size); rg.addColorStop(0, '#8d877c'); rg.addColorStop(0.6, '#5f5a53'); rg.addColorStop(1, '#3a3733'); g.fillStyle = rg; g.fill();
-    g.save(); g.clip(); g.lineWidth = Math.max(1, K * 0.22); for (let k = -20; k < 60; k++) { g.strokeStyle = k % 3 ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.07)'; g.beginPath(); g.moveTo(0, k * 2.6 * K); g.lineTo(size, (k * 2.6 + 26) * K); g.stroke(); }
-    const rr = rng(77); g.strokeStyle = 'rgba(20,18,16,.35)'; g.lineWidth = Math.max(1, K * 0.16); for (let k = 0; k < 40; k++) { const x = rr() * size, y = rr() * size; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rr() - 0.3) * 3 * K, y + (1.5 + rr() * 3) * K); g.lineTo(x + (rr() - 0.5) * 4 * K, y + (4 + rr() * 3) * K); g.stroke(); } g.restore();
+    // rock, painted once per level
+    if (!rockC || rockC.width !== size || rockC.key !== key) { rockC = paintRock(size, K); rockC.key = key; } g.drawImage(rockC, 0, 0);
     g.strokeStyle = 'rgba(235,225,205,.35)'; g.lineWidth = Math.max(1, K * 0.25); g.beginPath(); for (let x = 0; x < G; x++) x ? g.lineTo(X(x, K), Y(rock[x], K)) : g.moveTo(X(x, K), Y(rock[x], K)); g.stroke();
     // soil: brown earth lying on the rock; wet earth is darker and shines
     for (let a = 0; a < G; a++) { if (soil[a] < 0.05) continue; let b = a; while (b + 1 < G && soil[b + 1] >= 0.05) b++;
       g.beginPath(); g.moveTo(X(a, K) - K * 0.5, Y(rock[a], K)); for (let x = a; x <= b; x++) g.lineTo(X(x, K), Y(H(x), K)); g.lineTo(X(b, K) + K * 0.5, Y(rock[b], K)); for (let x = b; x >= a; x--) g.lineTo(X(x, K), Y(rock[x], K)); g.closePath();
       const sg = g.createLinearGradient(0, Y(H(a), K), 0, Y(rock[b], K) + K); sg.addColorStop(0, '#8a6238'); sg.addColorStop(1, '#4f351f'); g.fillStyle = sg; g.fill(); a = b; }
+    for (let a = 0; a < G; a++) { if (wet[a] !== 2 || soil[a] < 0.05) continue; let b = a; while (b + 1 < G && wet[b + 1] === 2 && soil[b + 1] >= 0.05) b++; // snow, as one smooth drift per run
+      g.beginPath(); g.moveTo(X(a, K) - K * 0.5, Y(rock[a], K)); for (let x = a; x <= b; x++) g.lineTo(X(x, K), Y(H(x), K)); g.lineTo(X(b, K) + K * 0.5, Y(rock[b], K)); for (let x = b; x >= a; x--) g.lineTo(X(x, K), Y(rock[x], K)); g.closePath();
+      const sn = g.createLinearGradient(0, Y(H(a), K) - K, 0, Y(rock[a], K) + K * 4); sn.addColorStop(0, '#f7faff'); sn.addColorStop(1, '#a9bdd6'); g.fillStyle = sn; g.fill(); g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = Math.max(1, K * 0.25); g.beginPath(); for (let x = a; x <= b; x++) x === a ? g.moveTo(X(x, K), Y(H(x), K)) : g.lineTo(X(x, K), Y(H(x), K)); g.stroke();
+      for (let x = a; x <= b; x++) if (Art.h(x * 7 + (now / 260 | 0)) < 0.08) { g.fillStyle = '#fff'; g.fillRect(X(x, K), Y(H(x), K) + K * 0.25, K * 0.28, K * 0.28); } a = b; }
     for (let x = 0; x < G; x++) { if (soil[x] < 0.3) continue; const px = X(x, K), py = Y(H(x), K), hh = soil[x] * K;
-      if (wet[x]) { g.fillStyle = 'rgba(24,40,70,.42)'; g.fillRect(px - K * 0.5, py, K + 0.5, hh); g.fillStyle = 'rgba(190,220,255,.35)'; g.fillRect(px - K * 0.5, py, K + 0.5, K * 0.22); }
+      if (wet[x] === 1) { g.fillStyle = 'rgba(24,40,70,.42)'; g.fillRect(px - K * 0.5, py, K + 0.5, hh); g.fillStyle = 'rgba(190,220,255,.35)'; g.fillRect(px - K * 0.5, py, K + 0.5, K * 0.22); }
       for (let q = 0; q < 2; q++) { const t = Art.h(x * 7 + q); if (t * soil[x] < 0.9) continue; g.fillStyle = q ? 'rgba(40,26,14,.5)' : 'rgba(190,170,140,.55)'; g.beginPath(); g.arc(px + (t - 0.5) * K, py + (0.25 + 0.6 * Art.h(x * 3 + q)) * hh, K * (0.16 + 0.14 * t), 0, 7); g.fill(); }
       if (moved[x] < 0.25 && !wet[x]) { g.strokeStyle = '#4f8a3c'; g.lineWidth = K * 0.55; g.lineCap = 'round'; g.beginPath(); g.moveTo(px - K * 0.5, py + K * 0.1); g.lineTo(px + K * 0.5, py + K * 0.1); g.stroke(); g.strokeStyle = '#7fbf5a'; g.lineWidth = Math.max(1, K * 0.14); g.beginPath(); for (let q = 0; q < 3; q++) { const bx = px + (Art.h(x * 5 + q) - 0.5) * K; g.moveTo(bx, py); g.lineTo(bx + (Art.h(x + q) - 0.5) * K * 0.5, py - K * (0.5 + 0.5 * Art.h(x * 11 + q))); } g.stroke(); } }
+    for (let x = 0; x < G; x++) if (tree0[x] && !tree[x] && !fell[x]) { fell[x] = 1; if (x % 4 === 0) for (let k = 0; k < 2; k++) birds.push({ x: x + Math.random(), y: H(x) + 7 + Math.random() * 2, vx: -2 - Math.random() * 3, vy: 3 + Math.random() * 2, a: 0, ph: Math.random() * 6 }); }
     // trees: standing where the roots still hold, lying downhill where the ground went
     for (let x = 1; x < G - 1; x++) { if (!tree0[x] || x % 2) continue; const px = X(x, K), py = Y(H(x), K); if (tree[x]) Art.tree(g, px, py + K * 0.3, K * (7 + 2.5 * Art.h(x)), K * 2.3, x, { pine: true }); else Art.tree(g, px, py, K * 6, K * 1.9, x, { pine: true, lean: (H(x - 1) > H(x + 1) ? 1 : -1) * (1.25 + 0.3 * Art.h(x)) }); }
     // the mark the ground has to reach
     const f = LVS.fill; let done = true; for (let x = f[0]; x <= f[1]; x++) if (H(x) < f[2]) done = false; g.setLineDash([K * 1.2, K * 0.8]); g.strokeStyle = done ? '#8be28b' : '#ffe08a'; g.lineWidth = Math.max(1.5, K * 0.3); g.beginPath(); g.moveTo(X(f[0], K) - K, Y(f[2], K)); g.lineTo(X(f[1], K) + K, Y(f[2], K)); g.stroke(); g.setLineDash([]);
     g.fillStyle = done ? '#8be28b' : '#ffe08a'; g.beginPath(); const fx = X(f[1], K) + K * 1.6, fy = Y(f[2], K); g.moveTo(fx, fy); g.lineTo(fx + K * 1.6, fy - K * 0.9); g.lineTo(fx + K * 1.6, fy + K * 0.9); g.closePath(); g.fill();
     // dust and tumbling clods over ground that is on the move
-    for (let x = 0; x < G; x++) if (act[x] && soil[x] > 0.2 && this.state === 'run' && dust.length < 260 && Math.random() < 0.3) dust.push({ x: x + Math.random(), y: H(x) + Math.random(), a: 0, s: 0.6 + Math.random(), c: Math.random() < 0.3 });
-    for (const d of dust) { d.a += dt; const l = d.a / (d.c ? 0.6 : 1.5); if (l >= 1) continue; if (d.c) { g.fillStyle = 'rgba(70,46,26,' + (1 - l) + ')'; g.beginPath(); g.arc(d.x * K, Y(d.y + Math.sin(l * Math.PI) * 2.2, K), K * 0.3 * d.s, 0, 7); g.fill(); } else { g.fillStyle = 'rgba(214,190,160,' + 0.22 * (1 - l) + ')'; g.beginPath(); g.arc(d.x * K, Y(d.y + l * 4, K), K * (0.8 + l * 2.4) * d.s, 0, 7); g.fill(); } } dust = dust.filter(d => d.a < 1.5);
-    if (this.hover && this.state === 'idle') { const x = this.hover[0], ok = canSlide(x), px = X(x, K), py = Y(H(x), K); g.fillStyle = ok ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.3)'; g.beginPath(); g.moveTo(px, py - K * 0.6); g.lineTo(px - K * 1.1, py - K * 2.6); g.lineTo(px + K * 1.1, py - K * 2.6); g.closePath(); g.fill(); }
+    for (let x = 0; x < G; x++) if (act[x] && soil[x] > 0.2 && (this.state === 'run' || this.state === 'replay') && dust.length < 420 && Math.random() < 0.35) dust.push({ x: x + Math.random(), y: H(x) + Math.random(), a: 0, s: 0.6 + Math.random() * (wet[x] === 2 ? 2.4 : 1), c: Math.random() < 0.3, w: wet[x] === 2 });
+    for (const d of dust) { d.a += dt; const l = d.a / (d.c ? 0.6 : 1.5); if (l >= 1) continue; if (d.c) { g.fillStyle = 'rgba(70,46,26,' + (1 - l) + ')'; g.beginPath(); g.arc(d.x * K, Y(d.y + Math.sin(l * Math.PI) * 2.2, K), K * 0.3 * d.s, 0, 7); g.fill(); } else { g.fillStyle = d.w ? 'rgba(240,246,255,' + 0.35 * (1 - l) + ')' : 'rgba(214,190,160,' + 0.22 * (1 - l) + ')'; g.beginPath(); g.arc(d.x * K, Y(d.y + l * 4, K), K * (0.8 + l * 2.4) * d.s, 0, 7); g.fill(); } } dust = dust.filter(d => d.a < 1.5);
+    for (const b of birds) { b.a += dt; b.x += b.vx * dt; b.y += b.vy * dt; b.vy *= 0.995; const w = Math.sin(b.a * 14 + b.ph) * K * 0.7, bx = X(b.x, K), by = Y(b.y, K); g.strokeStyle = 'rgba(30,26,30,.85)'; g.lineWidth = Math.max(1, K * 0.18); g.beginPath(); g.moveTo(bx - K * 0.9, by - w); g.quadraticCurveTo(bx - K * 0.3, by - w * 0.2, bx, by); g.quadraticCurveTo(bx + K * 0.3, by - w * 0.2, bx + K * 0.9, by - w); g.stroke(); } birds = birds.filter(b => b.a < 9);
+    if (this.state === 'win') { gold = Math.min(1, gold + dt * 0.5); const sg = g.createLinearGradient(size, size * 0.4, 0, size); sg.addColorStop(0, 'rgba(255,190,110,' + 0.28 * gold + ')'); sg.addColorStop(1, 'rgba(255,150,90,0)'); g.fillStyle = sg; g.fillRect(0, 0, size, size); } else gold = 0;
+    if (this.hover && this.state === 'idle') { const x = this.hover[0], ok = canSlide(x), px = X(x, K), py = Y(H(x), K); // a crack opens in the ground under the cursor
+      g.save(); if (ok) { g.globalCompositeOperation = 'lighter'; const hg = g.createRadialGradient(px, py, 0, px, py, 4 * K); hg.addColorStop(0, 'rgba(255,220,150,.45)'); hg.addColorStop(1, 'rgba(255,200,120,0)'); g.fillStyle = hg; g.fillRect(px - 4 * K, py - 4 * K, 8 * K, 8 * K); g.globalCompositeOperation = 'source-over'; }
+      g.strokeStyle = ok ? 'rgba(30,16,8,.9)' : 'rgba(255,255,255,.35)'; g.lineWidth = Math.max(1, K * 0.25); g.lineJoin = 'round'; g.beginPath(); const r = rng(x * 13 + 1); let cx = px - K * 1.6, cy = py + K * 0.3; g.moveTo(cx, cy); for (let k = 0; k < 6; k++) { cx += K * 0.55; cy += (r() - 0.3) * K * 0.9; g.lineTo(cx, cy); } g.stroke();
+      if (ok) { g.strokeStyle = 'rgba(255,235,190,.8)'; g.lineWidth = Math.max(1, K * 0.1); g.stroke(); } g.restore(); }
   }
 });
 </script></body></html>

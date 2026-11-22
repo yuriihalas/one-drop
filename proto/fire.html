@@ -74,10 +74,18 @@ const LEVELS = [
   { name: 'Вітер повертає', text: 'Вітер дме на схід, але скоро поверне на південь: стежте за смужкою під написом. Усе, що горітиме в ту мить, піде новим клином униз. Запаліть обидві ватри й не зачепіть хати.',
     wind: [0.3, 0], turn: [60, 0, 0.3], rects: [], fires: [[44, 30], [62, 72]], huts: [[86, 30], [22, 70]], best: [37, 28] },
   { name: 'Зустрічний пал', text: 'Ліс уже горить, і вітер жене пожежу до села через перешийок між озерами. Велика пожежа тягне до себе повітря: малий вогонь поблизу неї піде їй назустріч і випалить траву, якою вона мала пройти. Далеко від неї він сам побіжить за вітром. Один дотик: зупиніть пожежу.',
-    wind: [0.3, 0], draft: 0.9, rects: [[40, 0, 72, 42, 0], [40, 52, 72, 95, 0], [10, 0, 27, 95, 4]], wild: [20, 0, 27, 95], ash: [0, 0, 19, 95], fires: [], huts: [[84, 30], [84, 64], [90, 47]], best: [47, 47] }];
+    wind: [0.3, 0], draft: 0.9, rects: [[40, 0, 72, 42, 0], [40, 52, 72, 95, 0], [10, 0, 27, 95, 4]], wild: [20, 0, 27, 95], ash: [0, 0, 19, 95], fires: [], huts: [[84, 30], [84, 64], [90, 47]], best: [47, 47] },
+  { name: 'Гора під вітром', text: 'Вітер жене вогонь на схід, а гора тягне жар до своєї вершини. На навітряному схилі вони заодно, і вогонь злітає вгору. На підвітряному сперечаються, і вниз за вітром вогонь не спуститься. Запаліть обидві ватри й не зачепіть хат.',
+    wind: [0.2, 0], hills: [[60, 48, 28, 0.45]], rects: [[0, 0, 95, 22, 0], [0, 74, 95, 95, 0]], fires: [[60, 48], [22, 40]], huts: [[90, 48], [30, 62]], best: [7, 28] }];
 // ---- drawing: the ground is painted once per level, fire, smoke and embers every frame
 const off = document.createElement('canvas'); off.width = off.height = G; const og = off.getContext('2d'), img = og.createImageData(G, G);
-let ground = null, groundKey = '', smoke = [], motes = [], lastNow = 0;
+let ground = null, groundKey = '', smoke = [], motes = [], rise = [], lastNow = 0, night = 0;
+// one soft puff of smoke, drawn once and stamped many times
+const puff = document.createElement('canvas'); puff.width = puff.height = 64; { const pg = puff.getContext('2d'), gr = pg.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(78,72,68,.55)'); gr.addColorStop(0.5, 'rgba(70,66,62,.28)'); gr.addColorStop(1, 'rgba(60,58,56,0)'); pg.fillStyle = gr; pg.fillRect(0, 0, 64, 64); }
+// a tongue of flame: a teardrop from its base (x, y) to its tip, bent by the wind
+function tongue(g, x, y, tx, ty, w, col) { const nx = -(ty - y), ny = tx - x, l = Math.hypot(nx, ny) || 1, ox = nx / l * w, oy = ny / l * w; g.fillStyle = col; g.beginPath(); g.moveTo(x + ox, y + oy);
+  g.bezierCurveTo(x + ox * 1.2 + (tx - x) * 0.4, y + oy * 1.2 + (ty - y) * 0.4, tx + ox * 0.25, ty + oy * 0.25, tx, ty); g.bezierCurveTo(tx - ox * 0.25, ty - oy * 0.25, x - ox * 1.2 + (tx - x) * 0.4, y - oy * 1.2 + (ty - y) * 0.4, x - ox, y - oy);
+  g.quadraticCurveTo(x - (tx - x) * 0.35, y - (ty - y) * 0.35, x + ox, y + oy); g.fill(); }
 function paintGround(size, K) {
   const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d'), r = rng(41 + LEVELS.indexOf(LVF) * 13);
   g.fillStyle = '#3f7a34'; g.fillRect(0, 0, size, size);
@@ -107,8 +115,8 @@ function paintGround(size, K) {
   return c;
 }
 Proto({
-  G, levels: LEVELS, speed: 5, idleText: 'Торкніться трави: туди впаде іскра.',
-  build(L) { fireBuild(L); groundKey = ''; smoke = []; },
+  G, levels: LEVELS, speed: 5, slowmo: 0.3, idleText: 'Торкніться трави: туди впаде іскра.',
+  build(L) { fireBuild(L); groundKey = ''; smoke = []; rise = []; night = 0; },
   tap(x, y) { const f = fuel[y * G + x]; if (st[y * G + x]) { this.say('Тут уже горить або вигоріло. Торкніться трави.'); return false; } if (f === WATER || f === ROCK) { this.say('Тут іскра згасне. Торкніться трави чи лісу.'); return false; } fireSpark(x, y); this.say('Горить…'); },
   step: fireStep, verdict: fireVerdict,
   winText: () => LVF.fires.length ? 'Усі ватри горять, хати цілі.' : 'Пожежа згасла без поживи, село ціле.',
@@ -126,19 +134,26 @@ Proto({
     // bloom: burning cells at grid size, blurred wide and added as light on the dim ground
     for (let i = 0; i < G * G; i++) { d[i * 4] = 255; d[i * 4 + 1] = 150; d[i * 4 + 2] = 60; d[i * 4 + 3] = st[i] === 1 ? 255 : st[i] === 2 ? Math.min(90, H[i] * 220) : 0; }
     og.putImageData(img, 0, 0); g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.55 + 0.08 * Math.sin(now / 90); g.filter = 'blur(' + (K * 4).toFixed(1) + 'px)'; g.drawImage(off, 0, 0, size, size); g.restore(); g.filter = 'none';
-    // flames: tongues leaning with the wind, brighter and taller in the forest
+    // flames: tongues leaning with the wind (and up a slope, and toward a big fire), taller in the forest and while fresh
     g.save(); g.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < G * G; i++) { if (st[i] !== 1) continue; const t = cellHash(i), fl = Math.sin(now / 70 + t * 40); if (fl < -0.2) continue; const x = i % G, y = (i - x) / G, big = fuel[i] === FOREST ? 1.9 : 1;
-      const wa = windAt(i), cx = (x + 0.5 + wa[0] * 2.2 * (0.5 + fl * 0.5)) * K, cy = (y + 0.5 + wa[1] * 2.2 - 0.5 * big * (0.6 + fl * 0.4)) * K, rad = (0.9 + 0.7 * t) * big * K;
-      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rad); gr.addColorStop(0, 'rgba(255,244,190,.85)'); gr.addColorStop(0.45, 'rgba(255,150,40,.5)'); gr.addColorStop(1, 'rgba(255,60,0,0)'); g.fillStyle = gr; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
-      if (smoke.length < 420 && t * 997 % 1 < 0.035 * big) smoke.push({ x: x + 0.5, y: y + 0.5, a: 0, r: 0.8 + t, big }); }
+    for (let i = 0; i < G * G; i++) { if (st[i] !== 1) continue; const x = i % G, y = (i - x) / G, f = fuel[i]; const t = cellHash(i); if (t > (f === FOREST ? 0.6 : 0.4)) continue; const fl = 0.5 + 0.5 * Math.sin(now / 55 + t * 40), fresh = tm[i] / BURN[f], big = (f === FOREST ? 2.3 : 1.6) * (0.55 + 0.6 * fresh);
+      const wa = windAt(i), bx = (x + 0.5) * K, by = (y + 0.6) * K, hgt = (1.6 + 1.6 * fl) * big * K, sway = Math.sin(now / 140 + t * 17) * 0.25 + (t - 0.2) * 0.6, tx = bx + (wa[0] * 2.2 + sway) * hgt * 0.5, ty = by - hgt * 0.8 + wa[1] * 2.2 * hgt * 0.5;
+      tongue(g, bx, by, tx, ty, K * 0.55 * big, 'rgba(255,70,10,.32)'); tongue(g, bx, by, bx + (tx - bx) * 0.75, by + (ty - by) * 0.75, K * 0.38 * big, 'rgba(255,150,30,.42)'); tongue(g, bx, by, bx + (tx - bx) * 0.45, by + (ty - by) * 0.45, K * 0.22 * big, 'rgba(255,235,150,.6)');
+      if (smoke.length < 380 && t * 997 % 1 < 0.035 * big) smoke.push({ x: x + 0.5, y: y + 0.5, a: 0, r: 0.8 + t, big }); }
     // embers on their way, with a short arc so they read as flying
     for (const e of embers) { if (e.t < 0) continue; const u = e.t / e.n, ex = (e.x + (e.tx - e.x) * u + 0.5) * K, ey = (e.y + (e.ty - e.y) * u + 0.5 - Math.sin(u * Math.PI) * 5) * K;
       const gr = g.createRadialGradient(ex, ey, 0, ex, ey, 1.4 * K); gr.addColorStop(0, 'rgba(255,240,170,1)'); gr.addColorStop(1, 'rgba(255,90,0,0)'); g.fillStyle = gr; g.fillRect(ex - 1.4 * K, ey - 1.4 * K, 2.8 * K, 2.8 * K); }
     g.restore();
-    // smoke drifts downwind and thins out
-    for (const s of smoke) { s.a += dt; const wa = windAt(Math.max(0, Math.min(G - 1, s.y | 0)) * G + Math.max(0, Math.min(G - 1, s.x | 0))); s.x += (wa[0] * 16 + 0.4) * dt; s.y += (wa[1] * 16 - 1.6) * dt; const life = s.a / 2.6; if (life >= 1) continue; g.fillStyle = 'rgba(70,66,62,' + (0.2 * (1 - life)) + ')'; g.beginPath(); g.arc(s.x * K, s.y * K, (s.r + life * 3.4 * s.big) * K, 0, 7); g.fill(); }
-    smoke = smoke.filter(s => s.a < 2.6);
+    // smoke drifts downwind, swells and thins out
+    for (const s of smoke) { s.a += dt; const wa = windAt(Math.max(0, Math.min(G - 1, s.y | 0)) * G + Math.max(0, Math.min(G - 1, s.x | 0))); s.x += (wa[0] * 16 + 0.3) * dt; s.y += (wa[1] * 16 - 1.4) * dt; const life = s.a / 3.2; if (life >= 1) continue; const rr = (s.r + life * 4.5 * s.big) * K * 1.6; g.globalAlpha = Math.sin(life * Math.PI) * 0.9; g.drawImage(puff, s.x * K - rr, s.y * K - rr, rr * 2, rr * 2); }
+    g.globalAlpha = 1; smoke = smoke.filter(s => s.a < 3.2);
+    // the finale: night settles, and sparks keep rising off the burnt ground into the dark
+    if (this.state === 'win') { night = Math.min(1, night + dt * 0.4); g.fillStyle = 'rgba(4,8,22,' + 0.38 * night + ')'; g.fillRect(0, 0, size, size);
+      for (let k = 0; k < 16; k++) { const i = (Math.random() * G * G) | 0; if (st[i] === 2 || st[i] === 1) rise.push({ x: i % G + Math.random(), y: (i / G | 0) + Math.random(), a: 0, n: 1.5 + Math.random() * 2.5, s: Math.random() }); }
+      for (const b of LVF.fires) if (Math.random() < 0.5) rise.push({ x: b[0] + 0.5 + (Math.random() - 0.5) * 2, y: b[1], a: 0, n: 2 + Math.random() * 2, s: Math.random() }); }
+    if (rise.length) { g.save(); g.globalCompositeOperation = 'lighter'; for (const p of rise) { p.a += dt; const l = p.a / p.n; if (l >= 1) continue; const wa = windAt(Math.max(0, Math.min(G - 1, p.y | 0)) * G + Math.max(0, Math.min(G - 1, p.x | 0))); p.x += (wa[0] * 10 + Math.sin(p.a * 3 + p.s * 9) * 0.6) * dt; p.y -= (2.2 + p.s * 2) * dt;
+      const fl = 0.6 + 0.4 * Math.sin(p.a * 20 + p.s * 30), rr = K * (0.3 + 0.3 * p.s); g.fillStyle = 'rgba(255,' + (150 + 90 * (1 - l) | 0) + ',' + (60 * (1 - l) | 0) + ',' + (1 - l) * fl + ')'; g.beginPath(); g.arc(p.x * K, p.y * K, rr, 0, 7); g.fill(); }
+      g.restore(); rise = rise.filter(p => p.a < p.n); if (rise.length > 700) rise.splice(0, rise.length - 700); }
     // where a big fire pulls the air, show the air itself: motes that drift with the wind they are in
     if (LVF.draft) { g.lineCap = 'round'; g.lineWidth = Math.max(1, K * 0.2); while (motes.length < 90) motes.push({ x: Math.random() * G, y: Math.random() * G, a: Math.random() * 2 });
       for (const m of motes) { const i = Math.max(0, Math.min(G - 1, m.y | 0)) * G + Math.max(0, Math.min(G - 1, m.x | 0)), w = windAt(i); m.a += dt; m.x += w[0] * 34 * dt; m.y += w[1] * 34 * dt;
@@ -151,7 +166,7 @@ Proto({
       if (tn && stepN) { g.fillStyle = '#ffb070'; g.fillRect(size - bw - 4 * u, 33 * u, (bw - 12 * u) * (1 - stepN / LVF.turn[0]), 2 * u); } }
     for (const b of LVF.fires) Art.campfire(g, (b[0] + .5) * K, (b[1] + .5) * K, K, st[b[1] * G + b[0]] > 0, now);
     for (const h of LVF.huts || []) Art.roof(g, (h[0] + .5) * K, (h[1] + .5) * K, K, { burnt: st[h[1] * G + h[0]] > 0, now });
-    if (this.hover && this.state === 'idle') { g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = Math.max(1, K * 0.2); g.beginPath(); g.arc((this.hover[0] + .5) * K, (this.hover[1] + .5) * K, 2 * K, 0, 7); g.stroke(); }
+    if (this.hover && this.state === 'idle') { const x = (this.hover[0] + .5) * K, y = (this.hover[1] + .5) * K, fl = Math.sin(now / 60); g.save(); g.globalCompositeOperation = 'lighter'; const hg = g.createRadialGradient(x, y, 0, x, y, 3 * K); hg.addColorStop(0, 'rgba(255,190,90,.6)'); hg.addColorStop(1, 'rgba(255,150,60,0)'); g.fillStyle = hg; g.fillRect(x - 3 * K, y - 3 * K, 6 * K, 6 * K); tongue(g, x, y + K * 0.4, x + fl * K * 0.2, y - K * (1.8 + 0.3 * fl), K * 0.5, 'rgba(255,120,30,.7)'); tongue(g, x, y + K * 0.4, x, y - K * 1.1, K * 0.28, 'rgba(255,240,180,.85)'); g.restore(); }
   }
 });
 </script></body></html>

@@ -151,7 +151,7 @@ Proto({
     if (back >= 0) flash = pulse(post + (back >= mainG.length ? 0 : 0)); else flash = 0;
     amb = this.state === 'idle' || this.state === 'card' ? Math.max(0, Math.sin(now / 1300) * Math.sin(now / 470 + 1) - 0.82) * 2.5 : 0; // the cloud grumbles while it waits
     const key = size + ':' + LEVELS.indexOf(LVL); if (key !== bgKey) { bg = paintBg(size, K); bgKey = key; }
-    const shake = flash * 3 * u; g.save(); g.translate(Math.sin(now / 13) * shake, Math.cos(now / 17) * shake); g.drawImage(bg, 0, 0);
+    const thunder = back >= mainG.length && post > 28 && post < 70 ? Math.sin((post - 28) / 42 * Math.PI) * 2.2 : 0, shake = (flash * 3 + thunder) * u; // light arrives at once, the thunder a moment later g.save(); g.translate(Math.sin(now / 13) * shake, Math.cos(now / 17) * shake); g.drawImage(bg, 0, 0);
     // after a win, discharges crawl along the cloud base
     if (this.state === 'win' && post > 50) { crawlT -= dt; if (crawlT <= 0) { crawl = makeCrawl(); crawl.t = 0; crawlT = 0.9 + Math.random() * 1.6; } }
     let cl = 0; if (crawl) { crawl.t += dt; cl = Math.max(0, 1 - crawl.t / 0.45) * (0.6 + 0.4 * Math.sin(crawl.t * 60)); if (crawl.t > 0.45) crawl = null; }

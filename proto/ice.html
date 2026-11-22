@@ -77,7 +77,7 @@ function addIce(K) { // new cells go onto the ice layers once: a smooth body, an
 }
 function star(g, x, y, r, a) { g.fillStyle = 'rgba(255,255,255,' + a + ')'; g.beginPath(); g.moveTo(x, y - r); g.quadraticCurveTo(x, y, x + r, y); g.quadraticCurveTo(x, y, x, y + r); g.quadraticCurveTo(x, y, x - r, y); g.quadraticCurveTo(x, y, x, y - r); g.fill(); }
 Proto({
-  G, levels: LEVELS, speed: 3, slowmo: 0.3, idleText: 'Торкніться води: там народиться кристал.',
+  G, levels: LEVELS, speed: 3, slowmo: 0.5, idleText: 'Торкніться води: там народиться кристал.',
   build(L) { iceBuild(L); cold0.set(s); key = ''; sparks = []; steam = []; lostBy = ''; },
   tap(x, y) { const c = Math.max(0, Math.min(W - 1, Math.round(x / SX - (y & 1) * 0.5))), i = y * W + c;
     if (kind[i] !== WATER) { this.say(kind[i] === ROCK ? 'На камені кристал не виросте. Торкніться води.' : 'У теплому джерелі лід не візьметься. Торкніться холодної води.'); return false; }

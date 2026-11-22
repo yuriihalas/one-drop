@@ -31,7 +31,9 @@ const LEVELS = [
   { name: 'Довга зала', text: 'Велика зала відповідає складнішою хвилею: тихих ліній тут багато, вони перетинаються сіткою. Дзвіночки в протилежних кутах мають задзвеніти обидва.',
     rooms: [[6, 30, 89, 65]], mode: [4, 2, 84, 36], bells: [[7, 31], [88, 64]], need: 0.25, best: [7, 31] },
   { name: 'Три кімнати', text: 'Три кімнати з’єднані дверима, а нота підходить лише одній. Знайдіть її, а в ній місце, де повітря гойдається найсильніше.',
-    rooms: [[6, 10, 35, 40], [36, 24, 39, 27], [40, 10, 89, 40], [60, 41, 63, 45], [6, 46, 89, 86]], mode: [3, 1, 50, 31], bells: [[41, 11], [88, 39]], need: 0.2, best: [73, 40] }];
+    rooms: [[6, 10, 35, 40], [36, 24, 39, 27], [40, 10, 89, 40], [60, 41, 63, 45], [6, 46, 89, 86]], mode: [3, 1, 50, 31], bells: [[41, 11], [88, 39]], need: 0.2, best: [73, 40] },
+  { name: 'Вежа', text: 'Висока вузька вежа гуде своєю нотою: уздовж неї кілька тихих смуг, упоперек одна. Дзвіночки висять у протилежних кутах, і обидва мають задзвеніти на повну.',
+    rooms: [[30, 6, 65, 89]], mode: [1, 4, 36, 84], bells: [[31, 7], [64, 88]], need: 0.28, best: [64, 7] }];
 // ---- drawing: a plan of the rooms seen from above. The floor and walls are painted once; the air, the dust and the
 // sound are drawn every frame. Dust is the signature: sound pushes it out of the places where the air moves most and
 // it settles where the air stands still, so the standing wave draws itself on the floor (as in Kundt's tube).
