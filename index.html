@@ -44,13 +44,13 @@ kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;paddi
 <div id="stage"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="barx" id="bt"></div><div class="barx" id="bb"></div><div id="rep">ПОВТОР</div><div id="fin"><b id="fint"></b><span id="fins"></span></div>
 <div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button id="clisten">Послухати</button> <button class="go" id="cgo">Почати</button></div></div></div>
 <div id="bar"><div id="msg"></div><button id="listen">Мелодія<kbd>M</kbd></button><button id="hint">Підказка<kbd>H</kbd></button><button id="again">Ще раз<kbd>R</kbd></button><button id="next" class="go">Далі<kbd>N</kbd></button><button id="snd"></button></div>
-<div id="sub">Спроб: <span id="tries">0</span>. Кільця показують, куди піде хвиля: що блідіше кільце, то слабша хвиля. Цятки — ваші попередні кидки: що тепліший колір, то ближче було до перемоги.</div>
+<div id="sub">Спроб: <span id="tries">0</span>. Кільця показують, куди піде хвиля: що блідіше кільце, то слабша хвиля. Що більше пунктирне коло на латті, то вища хвиля йому потрібна. Цятки — ваші попередні кидки: що тепліший колір, то ближче було до перемоги.</div>
 </div>
 <script id="fs" type="x-shader/x-fragment">#version 300 es
 precision highp float;
 in vec2 v;out vec4 o;
 uniform sampler2D uH;uniform float uT,uF,uTilt,uFin,uBase;uniform vec3 uCP,uCT,uUp;
-uniform vec4 uPond,uB[4],uBar[3];uniform vec3 uLand[2],uRock[3];uniform float uLt[4];uniform float uReed,uWallW;uniform vec3 uWeed[2];uniform vec4 uWall[4];
+uniform vec4 uPond,uB[4],uBar[3];uniform vec3 uLand[2],uRock[3];uniform float uLt[4];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];
 const float N=120.;
 float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
@@ -117,19 +117,19 @@ if(uReed>.5){float rb=smoothstep(10.5,3.5,sh+(fbm(s*.55)-.5)*4.);col*=1.-rb*.22;
 vec2 gg=floor(s*1.25);vec2 cc=(gg+.5+(vec2(hash(gg+3.1),hash(gg+7.7))-.5)*.75)/1.25;vec2 q=s-cc-vec2(sin(uT*1.3+gg.x)*.06,0.);
 float dd=length(vec2(q.x+q.y*.35,q.y*.42));float stalk=smoothstep(.36,.14,dd)*step(1.02-rb*.9,hash(gg+.37));
 col=mix(col,mix(vec3(.13,.27,.07),vec3(.5,.58,.22),hash(gg+1.7))*(.8+.4*max(dot(n,L),0.))*TN,stalk);}
-for(int i=0;i<4;i++){vec2 q=s-uB[i].xy;float sc=1.+clamp(H(uB[i].xy)*2.4,-.12,.32);float r=length(q)/sc;if(r<5.4){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
+for(int i=0;i<4;i++){vec2 q=s-uB[i].xy;float sc=1.+clamp(H(uB[i].xy)*2.4,-.12,.32);float r=length(q)/sc;if(r<uNeed+1.6){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
 float notch=smoothstep(.05,.2,abs(a-(float(i)*1.3-2.))-.02);
-float pad=smoothstep(4.7,4.45,r)*notch;
-vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/4.7)*(.65+.55*max(dot(n,L),0.))*TN*(.9+.5*(sc-1.));
+float pad=smoothstep(uNeed+.8,uNeed+.55,r)*notch;
+vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/(uNeed+.8))*(.65+.55*max(dot(n,L),0.))*TN*(.9+.5*(sc-1.));
 col=mix(col,pc,pad*.97);
-col=mix(col,vec3(1.,1.,.95),(1.-lit)*.95*smoothstep(.24,.06,abs(length(q)-3.9))*step(.45,fract(a*3.82)));
-float ro2=1.15+2.65*w,l1=.5+.5*pow(abs(cos(a*4.)),.55),l2=.5+.5*pow(abs(sin(a*4.)),.55);
+col=mix(col,vec3(1.,1.,.95),(1.-lit)*.95*smoothstep(.24,.06,abs(length(q)-uNeed))*step(.45,fract(a*3.82)));
+float ro2=1.15+(uNeed-1.25)*w,l1=.5+.5*pow(abs(cos(a*4.)),.55),l2=.5+.5*pow(abs(sin(a*4.)),.55);
 float p1=smoothstep(ro2*l1,ro2*l1-.28,r);vec3 c1=mix(vec3(1.,.96,.95),vec3(.96,.5,.7),smoothstep(0.,ro2,r))*(.82+.18*smoothstep(ro2*l1,ro2*l1*.6,r));
 col=mix(col,c1*TN,p1);
 float ri=ro2*.63,p2=smoothstep(ri*l2,ri*l2-.22,r);vec3 c2=mix(vec3(1.),vec3(1.,.7,.82),smoothstep(0.,ri,r))*(.86+.14*smoothstep(ri*l2,ri*l2*.6,r));
 col=mix(col,c2*TN,p2);
 float cr=.3+.6*min(w,1.);col=mix(col,mix(vec3(.9,.62,.16),vec3(1.,.86,.32),lit),smoothstep(cr,cr-.18,r)*smoothstep(.2,.55,w));
-col+=vec3(.42,.26,.06)*lit*(.6+uFin)*smoothstep(4.2,0.,r)*(.75+.25*sin(uT*5.+float(i)));}}
+col+=vec3(.42,.26,.06)*lit*(.6+uFin)*smoothstep(uNeed+.3,0.,r)*(.75+.25*sin(uT*5.+float(i)));}}
 }
 float fd=length(s-60.);col=mix(col,sky(normalize(vec3(rd.xy,.02)),L),smoothstep(110.,700.,fd)*uTilt);}
 vec3 Hh=normalize(L+V);
@@ -181,23 +181,23 @@ const LEVELS=[
 {name:'Перша крапля',nocard:1,lesson:'Торкніться води: упаде крапля, і хвиля розкриє латаття. Що ближче крапля, то вища хвиля.',pond:[60,60,54,52],reeds:1,base:30,lilies:[[60,46]],T:0.0689,hint:[51,60,13],best:[47,56]},
 {name:'Відстань',lesson:'Що далі біжить хвиля, то нижчою вона стає. Знайдіть місце, звідки хвиля дійде до обох латать ще високою.',pond:[60,60,54,50],reeds:1,base:30,lilies:[[30,60],[90,60]],T:0.0646,hint:[63,63,13],best:[59,59]},
 {name:'Камінь',lesson:'Камінь затуляє хвилю: за ним лишається тиха тінь. Киньте краплю так, щоб жодне латаття не сховалося за каменем.',pond:[60,60,54,50],reeds:1,base:30,rocks:[[70,60,8]],lilies:[[30,60],[92,60]],T:0.0611,hint:[64,54,13],best:[68,50]},
-{name:'Щілина',lesson:'Крізь вузьку щілину хвиля виходить новим колом, ніби там упала ще одна крапля. Так вона потрапляє за стіну.',pond:[60,60,55,52],reeds:1,base:30,walls:[[4,60,53,60,2.2],[67,60,116,60,2.2]],lilies:[[34,88],[86,88],[60,26]],T:0.0366,hint:[63,58,13],best:[59,62]},
-{name:'Мілина',lesson:'Світле дно — це мілина. Над нею хвиля сповільнюється і росте вгору, як цунамі біля берега. Лататтю на мілині вистачить і далекої хвилі.',pond:[60,60,55,50],reeds:1,base:30,bars:[[90,60,.9,260]],lilies:[[28,60],[90,60]],T:0.0836,hint:[45,54,13],best:[41,50]},
 {name:'Ряска',lesson:'Ряска на поверхні гасить хвилю. Знайдіть місце, звідки хвиля обійде зелену пляму.',pond:[60,60,55,50],reeds:1,base:30,weeds:[[60,60,14]],lilies:[[28,60],[92,60]],T:0.0622,hint:[63,39,13],best:[59,35]},
-{name:'Відбиття',lesson:'Очерет хвилю гасив, а кам’яний берег її відбиває. У довгому ставку відбиті хвилі знову сходяться в одній точці на іншому кінці.',pond:[60,60,56,36],base:30,lilies:[[103,60]],T:0.181,hint:[21,63,13],best:[17,59]},
+{name:'Мілина',lesson:'Світле дно — це мілина. Над нею хвиля сповільнюється і росте вгору, як цунамі біля берега. Лататтю на мілині вистачить і далекої хвилі.',pond:[60,60,55,50],reeds:1,base:30,bars:[[90,60,.9,260]],lilies:[[28,60],[90,60]],T:0.0836,hint:[45,54,13],best:[41,50]},
+{name:'Щедрик',lesson:'Кожне латаття — це нота, і хвиля грає їх по черзі. Знайдіть місце, звідки одна крапля зіграє «Щедрик»: рожева, жовта, знову рожева, синя. Кільця показують, куди хвиля дійде раніше.',pond:[60,60,54,50],reeds:1,base:30,lilies:[[40,60],[61,32],[79,87],[100,53]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:20},hint:[24,63,13],best:[20,59]},
+{name:'Щілина',lesson:'Крізь вузьку щілину хвиля виходить новим колом, ніби там упала ще одна крапля. Так вона потрапляє за стіну.',pond:[60,60,55,52],reeds:1,base:30,walls:[[4,60,53,60,2.2],[67,60,116,60,2.2]],lilies:[[34,88],[86,88],[60,26]],T:0.0366,hint:[63,58,13],best:[59,62]},
 {name:'Лінза',lesson:'Над мілиною хвиля завертає, як світло в лінзі. Кругла мілина збирає хвилю в одну точку за собою.',pond:[60,60,54,56],reeds:1,base:30,bars:[[60,58,.9,200]],lilies:[[60,20],[60,92]],T:0.0574,hint:[63,42,13],best:[59,38]},
 {name:'Ставок',lesson:'Тепер усе разом: відстань, каміння, мілини, ряска і кам’яні береги. Одна крапля, чотири латаття.',pond:[60,60,56,53],base:2.6,lands:[[64,122,24],[-4,14,26]],rocks:[[44,60,7],[80,44,6],[72,86,8]],bars:[[60,30,.75,260],[92,66,.7,180],[26,80,.6,200]],weeds:[[52,84,8]],lilies:[[24,50],[90,24],[40,98],[100,78]],T:0.0536,hint:[33,36,13],best:[29,32]},
-{name:'Щедрик',lesson:'Кожне латаття — це нота, і хвиля грає їх по черзі. Знайдіть місце, звідки одна крапля зіграє «Щедрик»: рожева, жовта, знову рожева, синя. Кільця показують, куди хвиля дійде раніше.',pond:[60,60,54,50],reeds:1,base:30,lilies:[[40,60],[61,32],[79,87],[100,53]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:20},hint:[24,63,13],best:[20,59]},
-{name:'Доля стукає',lesson:'Три однакові ноти й одна нижча: так починається П\u2019ята симфонія Бетховена. Три сині латаття мають прозвучати рівно одне за одним, а фіолетове останнім.',pond:[60,60,54,50],reeds:1,base:30,lilies:[[60,78],[37,73],[87,57],[50,35]],T:0.012,tune:{title:'мотив Бетховена',f:[392,392,392,311.13],on:[0,1,2,3],unit:30,tol:16},hint:[56,91,13],best:[60,95]},
-{name:'Канал',lesson:'Між двома стінами хвилі нікуди розходитися, тому вона майже не слабшає. Канал донесе її до далекого латаття.',pond:[60,60,55,52],reeds:1,base:30,walls:[[52,52,108,52,2.2],[52,68,108,68,2.2]],lilies:[[102,60],[30,30],[30,90]],T:0.0718,hint:[30,63,13],best:[26,59]},
-{name:'Ода за стіною',lesson:'Початок «Оди до радості»: дві зелені ноти, оранжева, синя. Дві з них сховані за стіною, і хвиля дістанеться до них лише крізь щілину.',pond:[60,60,54,50],reeds:1,base:30,walls:[[60,4,60,50,2.2],[60,70,60,116,2.2]],lilies:[[42,60],[41,32],[71,60],[81,44]],T:0.012,tune:{title:'«Оду до радості»',f:[329.63,329.63,349.23,392],on:[0,1,2,3],unit:30,tol:16},hint:[29,63,13],best:[25,59]},
-{name:'Дві щілини',lesson:'У стіні дві щілини, і з кожної виходить своя хвиля. Знайдіть місце, звідки хвиля пройде на обидва боки стіни.',pond:[60,60,55,52],reeds:1,base:30,walls:[[4,56,38,56,2.2],[50,56,70,56,2.2],[82,56,116,56,2.2]],lilies:[[60,92],[60,24]],T:0.0423,hint:[45,60,13],best:[41,56]},
-{name:'Три мілини',lesson:'Три латаття стоять на мілинах, одне на глибині. Згадайте: на мілині хвиля росте сама.',pond:[60,60,55,53],reeds:1,base:30,bars:[[92,40,.9,200],[92,84,.9,200],[40,96,.9,160]],lilies:[[92,40],[92,84],[40,96],[26,40]],T:0.0837,hint:[45,51,13],best:[41,47]},
-{name:'Щедрик на мілині',lesson:'Знову «Щедрик», але посеред ставка мілина. Над нею хвиля йде повільніше, тож нота за мілиною запізнюється.',pond:[60,60,54,50],reeds:1,base:30,bars:[[60,60,.9,260]],lilies:[[40,60],[54,26],[73,54],[88,90]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:16},hint:[27,63,13],best:[23,59]},
-{name:'Еліпс і ряска',lesson:'Прямий шлях закрила ряска. Але кам\u2019яні береги довгого ставка все одно зберуть хвилю в одну точку.',pond:[60,60,38,56],base:30,weeds:[[60,60,11]],lilies:[[60,101]],T:0.1368,hint:[63,24,13],best:[59,20]},
-{name:'Коліно',lesson:'Канал повертає за ріг. Хвиля поверне разом із ним.',pond:[60,60,55,52],reeds:1,base:30,walls:[[30,30,94,30,2.2],[30,44,80,44,2.2],[94,30,94,98,2.2],[80,44,80,98,2.2]],lilies:[[87,90],[36,80]],T:0.0258,hint:[27,45,13],best:[23,41]},
-{name:'Щедрик і скеля',lesson:'Скеля стоїть на шляху до однієї з нот. Хвиля обійде її, але дорога в обхід довша, і нота прозвучить пізніше.',pond:[60,60,54,50],reeds:1,base:30,rocks:[[58,60,12]],lilies:[[38,60],[55,28],[76,52],[91,82]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:14},hint:[25,64,13],best:[21,60]},
-{name:'Плесо',lesson:'Останній ставок: стіна зі щілиною, камінь, мілина і ряска. Одна крапля, чотири латаття.',pond:[60,60,56,54],base:30,walls:[[60,6,60,44,2.2],[60,60,60,114,2.2]],rocks:[[32,78,7]],bars:[[98,36,.9,200]],weeds:[[84,84,10]],lilies:[[30,30],[98,36],[28,98],[96,92]],T:0.0282,hint:[58,54,13],best:[62,50]}];
+{name:'Відбиття',lesson:'Очерет хвилю гасив, а кам’яний берег її відбиває. У довгому ставку відбиті хвилі знову сходяться в одній точці на іншому кінці. Це латаття велике: щоб розкрити його до межі, потрібна дуже висока хвиля, і зблизька однієї краплі не вистачить.',pond:[60,60,56,36],base:30,lilies:[[103,60]],T:0.181,hint:[21,63,13],best:[17,59]},
+{name:'Доля стукає',lesson:'Три однакові ноти й одна нижча: так починається П\u2019ята симфонія Бетховена. Три сині латаття мають прозвучати рівно одне за одним, а фіолетове останнім.',pond:[60,60,54,50],reeds:1,base:30,lilies:[[60,78],[37,73],[87,57],[50,35]],T:0.012,tune:{title:'мотив Бетховена',f:[392,392,392,311.13],on:[0,1,2,3],unit:30,tol:14},hint:[56,91,13],best:[60,95]},
+{name:'Ода за стіною',lesson:'Початок «Оди до радості»: дві зелені ноти, оранжева, синя. Дві з них сховані за стіною, і хвиля дістанеться до них лише крізь щілину.',pond:[60,60,54,50],reeds:1,base:30,walls:[[60,4,60,50,2.2],[60,70,60,116,2.2]],lilies:[[42,60],[41,32],[71,60],[81,44]],T:0.012,tune:{title:'«Оду до радості»',f:[329.63,329.63,349.23,392],on:[0,1,2,3],unit:30,tol:12},hint:[29,63,13],best:[25,59]},
+{name:'Канал',lesson:'Між двома стінами хвилі нікуди розходитися, тому вона майже не слабшає. Канал донесе її до далекого латаття.',pond:[60,60,55,52],reeds:1,base:30,walls:[[52,52,108,52,2.2],[52,68,108,68,2.2]],lilies:[[102,60],[30,30],[30,90]],T:0.0749,hint:[30,63,13],best:[26,59]},
+{name:'Щедрик на мілині',lesson:'Знову «Щедрик», але посеред ставка мілина. Над нею хвиля йде повільніше, тож нота за мілиною запізнюється.',pond:[60,60,54,50],reeds:1,base:30,bars:[[60,60,.9,260]],lilies:[[40,60],[54,26],[73,54],[88,90]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:11},hint:[27,63,13],best:[23,59]},
+{name:'Три мілини',lesson:'Три латаття стоять на мілинах, одне на глибині. Згадайте: на мілині хвиля росте сама.',pond:[60,60,55,53],reeds:1,base:30,bars:[[92,40,.9,200],[92,84,.9,200],[40,96,.9,160]],lilies:[[92,40],[92,84],[40,96],[26,40]],T:0.0872,hint:[45,51,13],best:[41,47]},
+{name:'Дві щілини',lesson:'У стіні дві щілини, і з кожної виходить своя хвиля. Знайдіть місце, звідки хвиля пройде на обидва боки стіни.',pond:[60,60,55,52],reeds:1,base:30,walls:[[4,56,38,56,2.2],[50,56,70,56,2.2],[82,56,116,56,2.2]],lilies:[[60,92],[60,24]],T:0.0484,hint:[45,60,13],best:[41,56]},
+{name:'Коліно',lesson:'Канал повертає за ріг. Хвиля поверне разом із ним.',pond:[60,60,55,52],reeds:1,base:30,walls:[[30,30,94,30,2.2],[30,44,80,44,2.2],[94,30,94,98,2.2],[80,44,80,98,2.2]],lilies:[[87,90],[36,80]],T:0.035,hint:[27,45,13],best:[23,41]},
+{name:'Еліпс і ряска',lesson:'Прямий шлях закрила ряска. Але кам\u2019яні береги довгого ставка все одно зберуть хвилю в одну точку. Це латаття велике: щоб розкрити його до межі, потрібна дуже висока хвиля, і зблизька однієї краплі не вистачить.',pond:[60,60,38,56],base:30,weeds:[[60,60,11]],lilies:[[60,101]],T:0.155,hint:[63,24,13],best:[59,20]},
+{name:'Щедрик і скеля',lesson:'Скеля стоїть на шляху до однієї з нот. Хвиля обійде її, але дорога в обхід довша, і нота прозвучить пізніше.',pond:[60,60,54,50],reeds:1,base:30,rocks:[[58,60,12]],lilies:[[38,60],[55,28],[76,52],[91,82]],T:0.012,tune:{title:'«Щедрик»',f:[466.16,440,466.16,392],on:[0,2,3,4],unit:30,tol:10},hint:[25,64,13],best:[21,60]},
+{name:'Плесо',lesson:'Останній ставок. Кам\u2019яні береги й острови відбивають хвилю, мілини її повертають, ряска гасить. Простого місця тут немає: шукайте, де хвилі складуться.',pond:[60,60,56,54],base:2.6,lands:[[120,20,26],[10,118,24]],rocks:[[46,56,8],[80,70,7]],walls:[[60,6,60,34,2.2],[30,84,56,84,2.2]],bars:[[90,44,.8,220],[40,100,.7,180]],weeds:[[72,96,9]],lilies:[[30,36],[90,44],[40,100],[98,90]],T:0.0545,hint:[51,67,13],best:[47,71]}];
 const $=id=>document.getElementById(id);
 const stage=$('stage'),glc=$('gl'),ov=$('ov'),g=ov.getContext('2d'),finEl=$('fin'),card=$('card');
 const gl=glc.getContext('webgl2',{antialias:false});
@@ -206,12 +206,14 @@ const SPEED=150,LAST=LEVELS.length-1;
 let lvI=0,T=0.068,state='card',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
 let camK=0,camGoal=0,camDur=1.8,theta=0,finT=0,ringT=0,tscale=1,fin=0,finGoal=0,phase='',dropAt=null;
 let disp=[0,0,0,0],wasLit=[0,0,0,0],bursts=[],litOrder=[],closing=false;
+let specks=[];
+function seed(){specks=[];let g2=0;while(specks.length<150&&g2++<4000){const x=2+Math.random()*(N-4),y=2+Math.random()*(N-4);if(!blk[(y|0)*N+(x|0)])specks.push({x,y,hx:x,hy:y})}}
 let hover=null,isDown=false,tt=null,ttKey='',lastRes=null,stars=0,lastJ=null;
 const PITCH={466.16:'#ff8fc0',440:'#ffd95a',392:'#6fc3ff',311.13:'#c79bff',329.63:'#8fe08a',349.23:'#ffab5e'};
 function note(f,t0){tone(f,t0||0,1.2,0.13);tone(f*2,t0||0,0.6,0.03)}
 function listen(){const t=LEVELS[lvI].tune;if(!t)return;t.f.forEach((f,i)=>note(f,t.on[i]*t.unit/SPEED))}
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
-let doneSet=new Set((store.get('pleso-done')||'').split(',').filter(Boolean).map(Number));
+let doneSet=new Set((store.get('pleso-done2')||'').split(',').filter(Boolean).map(Number));
 let muted=store.get('pleso-mute')==='1',AC=null;
 function au(){if(muted)return null;if(!AC){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;AC=new C()}if(AC.state==='suspended')AC.resume();return AC}
 function tone(f,t0,dur,vol,type){const a=au();if(!a)return;const t=a.currentTime+t0,o=a.createOscillator(),gn=a.createGain();o.type=type||'sine';o.frequency.setValueAtTime(f,t);gn.gain.setValueAtTime(0.0001,t);gn.gain.exponentialRampToValueAtTime(vol,t+0.015);gn.gain.exponentialRampToValueAtTime(0.0001,t+dur);o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+dur+0.05)}
@@ -226,21 +228,21 @@ if(!gl){say('Цей браузер не підтримує WebGL2, тому во
 const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s};
 prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,'#version 300 es\nout vec2 v;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2))*2.-1.;v=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}'));
 gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,$('fs').textContent));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
-for(const n of['uT','uB','uF','uTilt','uFin','uCP','uCT','uUp','uPond','uLand','uRock','uBar','uBase','uLt','uReed','uWeed','uWall','uWallW'])U_[n]=gl.getUniformLocation(prog,n);
+for(const n of['uT','uB','uF','uTilt','uFin','uCP','uCT','uUp','uPond','uLand','uRock','uBar','uBase','uLt','uReed','uWeed','uWall','uWallW','uNeed'])U_[n]=gl.getUniformLocation(prog,n);
 tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texStorage2D(gl.TEXTURE_2D,1,gl.R16F,N,N);
 gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 gl.bindVertexArray(gl.createVertexArray())}
 const lvs=$('lvs');LEVELS.forEach((L,k)=>{const b=document.createElement('button');b.className='lv';b.textContent=k+1;b.title=L.name;b.onclick=()=>setLevel(k);lvs.appendChild(b)});
 function paintLv(){document.querySelectorAll('.lv').forEach((b,k)=>{b.classList.toggle('cur',k===lvI);b.classList.toggle('done',doneSet.has(k))})}
-function setLevel(i){lvI=i;const L=LEVELS[i];buildLevel(L);T=L.T;tries=0;marks=[];hintLv=0;lastRes=null;$('tries').textContent=0;store.set('pleso-level',i);
+function setLevel(i){lvI=i;const L=LEVELS[i];buildLevel(L);T=L.T;tries=0;marks=[];hintLv=0;lastRes=null;$('tries').textContent=0;store.set('pleso-level2',i);
 paintLv();$('lvname').textContent=(i+1)+'. '+L.name;
 if(gl){gl.uniform4f(U_.uPond,...L.pond);const ld=new Float32Array([-999,-999,0,-999,-999,0]);(L.lands||[]).forEach((a,k)=>ld.set(a,k*3));gl.uniform3fv(U_.uLand,ld);
 const rk=new Float32Array([-999,-999,0,-999,-999,0,-999,-999,0]);(L.rocks||[]).forEach((a,k)=>rk.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uRock,rk);
 const br=new Float32Array([0,0,0,1,0,0,0,1,0,0,0,1]);(L.bars||[]).forEach((a,k)=>br.set(a,k*4));gl.uniform4fv(U_.uBar,br);gl.uniform1f(U_.uBase,L.base);
-gl.uniform1f(U_.uReed,L.reeds?1:0);const wd=new Float32Array([-999,-999,0,-999,-999,0]);(L.weeds||[]).forEach((a,k)=>wd.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uWeed,wd);
+gl.uniform1f(U_.uReed,L.reeds?1:0);gl.uniform1f(U_.uNeed,2.2+3.4*Math.sqrt(L.T/0.18));const wd=new Float32Array([-999,-999,0,-999,-999,0]);(L.weeds||[]).forEach((a,k)=>wd.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uWeed,wd);
 const wl=new Float32Array(16).fill(-999);(L.walls||[]).forEach((a,k)=>wl.set([a[0]+.5,a[1]+.5,a[2]+.5,a[3]+.5],k*4));gl.uniform4fv(U_.uWall,wl);gl.uniform1f(U_.uWallW,L.walls?L.walls[0][4]:1)}
 $('listen').style.display=$('clisten').style.display=L.tune?'inline-block':'none';
-reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
+seed();reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
 function begin(){if(state!=='card')return;card.classList.remove('on');state='idle';idleText()}
 function idleText(){if(LEVELS[lvI].tune){say('Знайдіть місце, звідки хвиля торкнеться латать у порядку мелодії. Порядок кольорів і ритм показано вгорі в рядку «треба».');return}say(lvI===0&&!tries?'Торкніться води біля латаття: упаде крапля, і хвиля його розкриє.':'Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
 function reset(){simReset();if(state!=='card')state='idle';splash=null;wasLit=[0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
@@ -252,7 +254,7 @@ function hint(){if(state==='card')return;if(hintLv<3)hintLv++;if(state!=='idle')
 function drop(x,y){simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
 function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
 function score(){if(!marks.length)return;const m=marks[marks.length-1];if(LV.tune){const j=judge();m.s=j.ok?1:Math.max(0.2,0.95-j.err/70)}else m.s=Math.min(...MX)/T}
-function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;score();doneSet.add(lvI);store.set('pleso-done',[...doneSet].join(','));paintLv();
+function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;score();doneSet.add(lvI);store.set('pleso-done2',[...doneSet].join(','));paintLv();
 const n=BUOYS.length;$('fint').textContent=n===1?'Латаття розкрилося':n===2?'Обидва розкрилися':n===3?'Усі три розкрилися':'Усі чотири розкрилися';
 $('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;
 if(LV.tune){$('fint').textContent='Ставок зіграв '+LV.tune.title;$('fins').textContent='★'.repeat(stars)+'☆'.repeat(3-stars)+(stars===3?'  ритм точний':stars===2?'  ритм майже точний':'  порядок правильний, ритм ще можна вирівняти')}
@@ -272,6 +274,7 @@ function heat(s){return s<0?'rgba(255,255,255,.6)':s>=1?'#7be0a0':s>=.85?'#ff9d4
 function label(t,x,y,px,col){g.font='600 '+Math.round(14*px)+'px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.lineWidth=3.5*px;g.strokeStyle='rgba(8,24,32,.85)';g.strokeText(t,x,y);g.fillStyle=col||'#fff';g.fillText(t,x,y)}
 function overlay(now){const K=size/N,px=size/600;g.clearRect(0,0,size,size);ov.style.opacity=camK<0.02?1:0;if(camK>=0.02)return;
 const L=LEVELS[lvI];
+g.fillStyle='rgba(235,240,215,.42)';for(const q of specks){const i=(q.y|0)*N+(q.x|0);if(!blk[i]&&!blk[i+1]&&!blk[i-1]&&!blk[i+N]&&!blk[i-N]){q.x-=(U[i+1]-U[i-1])*9;q.y-=(U[i+N]-U[i-N])*9}q.x+=(q.hx-q.x)*.012;q.y+=(q.hy-q.y)*.012;if(blk[(q.y|0)*N+(q.x|0)]){q.x=q.hx;q.y=q.hy}g.fillRect((q.x+.5)*K-px,(q.y+.5)*K-px,2*px,2*px)}
 for(const m of marks){const a=(m.x+.5)*K,b=(m.y+.5)*K;g.beginPath();g.arc(a,b,4.2*px,0,7);g.fillStyle=heat(m.s);g.fill();g.lineWidth=1.4*px;g.strokeStyle='rgba(8,24,32,.8)';g.stroke()}
 if(L.tune){const t=L.tune;BUOYS.forEach(([x,y],k)=>{g.strokeStyle=PITCH[t.f[k]];g.lineWidth=3*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,6.3*K,0,7);g.stroke()});
 const w=250*px,h=50*px,x0=(size-w)/2,y0=10*px,ux=42*px;g.fillStyle='rgba(8,24,32,.72)';g.beginPath();g.roundRect(x0,y0,w,h,10*px);g.fill();
@@ -341,5 +344,5 @@ if(state==='card'){if(e.code==='Enter'||e.code==='Space'){e.preventDefault();beg
 if(e.code==='KeyM'){e.preventDefault();listen()}if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}if(e.code==='KeyN'&&state==='win'){e.preventDefault();next()}});
 window.__test={level:i=>{setLevel(i);begin()},drop:(x,y)=>{reset();camK=0;fin=0;drop(x,y)},hover:(x,y)=>{hover=x==null?null:[x,y]},
 fast:()=>{while(state==='run'&&STEP<STEPS&&!MX.every(v=>v>=T))simTick()},state:()=>[lvI,state,phase,STEP,+camK.toFixed(2),+finT.toFixed(1),MX.map(v=>+(v/T).toFixed(2))]};
-setLevel(Math.min(LAST,Math.max(0,+(store.get('pleso-level')||0)||0)));requestAnimationFrame(frame);
+setLevel(Math.min(LAST,Math.max(0,+(store.get('pleso-level2')||0)||0)));requestAnimationFrame(frame);
 </script></body></html>
