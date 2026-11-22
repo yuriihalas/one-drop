@@ -3,82 +3,189 @@
 <title>Блискавка: прототип</title><link rel="stylesheet" href="kit.css"></head><body>
 <script src="kit.js"></script>
 <script>
-// LAW: a bolt takes the path of least resistance from the touch to the ground, and the whole
-// path is decided at once. Air resists (unevenly), heavy rain resists half as much, wood five
-// times less, a wire sixty times less. First a faint leader feels its way down in many branches;
-// the branch that touches the ground first carries the bright return stroke back up.
-const G = 96, AIR = 1, RAIN = 0.45, WOOD = 0.2, WIRE = 0.03;
-const cost = new Float32Array(G * G), kind = new Uint8Array(G * G); // 0 air, 1 wire, 2 tree, 3 house, 4 rain
-let lamps = [], path = [], tips = [], dist = null, dEnd = 0, reach = 0, back = -1, lit = [], hit = 0, flash = 0, LVL = null;
-const seg = (a, f) => { const n = Math.max(Math.abs(a[2] - a[0]), Math.abs(a[3] - a[1])); for (let k = 0; k <= n; k++) f(Math.round(a[0] + (a[2] - a[0]) * k / n), Math.round(a[1] + (a[3] - a[1]) * k / n)); };
-const LEVELS = [
-  { name: 'Найлегший шлях', text: 'Блискавка не шукає найкоротшої дороги до землі. Вона шукає найлегшу: дріт проводить струм у десятки разів краще за повітря. Влучте блискавкою в ліхтар.',
-    wires: [[60, 30, 60, 93]], lamps: [[60, 60]], trees: [], houses: [], rain: [], best: [52, 14] },
-  { name: 'Дерево', text: 'Дерево теж проводить струм: гірше за дріт, але краще за повітря. Запаліть обидва ліхтарі й не влучте в дерево.',
-    wires: [[28, 22, 28, 50], [28, 50, 66, 50], [66, 50, 66, 93]], lamps: [[28, 38], [66, 72]], trees: [[48, 62]], houses: [], rain: [], best: [22, 12] },
-  { name: 'Дощ і відвід', text: 'Щільна смуга дощу проводить удвічі краще за сухе повітря і веде блискавку за собою. Над хатами стоїть блискавковідвід. Зробіть так, щоб удар пішов у нього, а не в дах.',
-    wires: [[70, 40, 70, 93]], lamps: [[70, 66]], trees: [], houses: [[22, 82], [46, 82]], rain: [[30, 6, 44, 70], [84, 4, 72, 38]], best: [86, 8] }];
-function build(L) { LVL = L;
-  const r = rng(11 + LEVELS.indexOf(L) * 7), n = new Float32Array(13 * 13).map(() => r());
+// LAW: lightning is born at the base of the storm cloud and takes the path of least resistance to the ground; the whole
+// path is decided at once. Air resists unevenly, a shaft of heavy rain about half as much, wood five times less, metal
+// sixty times less, open water well. A sharp metal tip ionises the air around it (corona), so near the tip the air
+// conducts better and the tip draws strikes from the side: that is how a lightning rod protects the houses around it.
+// First a faint stepped leader feels its way down in many branches; the branch that touches the ground first carries
+// the bright return stroke back up, and the same channel then flashes again a few times.
+// The field between cloud and ground points down, so in open air the leader steps mostly downward: a sideways step
+// costs more than a step down and a step up costs most. A conductor feels no such pull and is crossed in any direction.
+// So the bolt only bends toward what is close below it: a rod protects a cone, not the whole sky.
+const G = 96, BASE = 13, DIAG = 1.25, SIDE = 2.6, UP = 4, AIR = 1, RAIN = 0.45, WOOD = 0.2, METAL = 0.03, LAKE = 0.12, POLE = 0.22;
+const AIRK = 0, METALK = 1, TREEK = 2, HOUSEK = 3, RAINK = 4, LAKEK = 5, BOATK = 6, POLEK = 7;
+const cost = new Float32Array(G * G), kind = new Uint8Array(G * G), dist = new Float64Array(G * G), from = new Int32Array(G * G);
+let LVL = null, path = [], tips = [], dEnd = 0, hit = 0, lit = [], hk = [], hv = [];
+const seg = (a, f) => { const n = Math.max(Math.abs(a[2] - a[0]), Math.abs(a[3] - a[1]), 1); for (let k = 0; k <= n; k++) f(Math.round(a[0] + (a[2] - a[0]) * k / n), Math.round(a[1] + (a[3] - a[1]) * k / n)); };
+function liBuild(L) { LVL = L; const r = rng(11 + (L.seed || 0) * 7), n = new Float32Array(13 * 13).map(() => r());
   for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) { // smooth noise: air is not uniform
     const fx = x / 8, fy = y / 8, ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy, v = (i, j) => n[j * 13 + i];
     const s = v(ix, iy) * (1 - ax) * (1 - ay) + v(ix + 1, iy) * ax * (1 - ay) + v(ix, iy + 1) * (1 - ax) * ay + v(ix + 1, iy + 1) * ax * ay;
-    cost[y * G + x] = AIR * (0.7 + 1.5 * s); kind[y * G + x] = 0; }
-  for (const a of L.rain) seg(a, (x, y) => { for (let d = -3; d <= 3; d++) { const X = x + d; if (X < 0 || X >= G) continue; kind[y * G + X] = 4; cost[y * G + X] = RAIN; } });
-  for (const t of L.trees) { for (let y = t[1]; y < G; y++) { kind[y * G + t[0]] = 2; cost[y * G + t[0]] = WOOD; }
-    for (let y = -6; y <= 6; y++) for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36) { const i = (t[1] + y) * G + t[0] + x; kind[i] = 2; cost[i] = WOOD; } }
-  for (const h of L.houses) for (let y = h[1] - 9; y < G; y++) for (let x = h[0] - 7; x <= h[0] + 7; x++) { if (y < h[1] && Math.abs(x - h[0]) > (y - (h[1] - 9)) * 0.85) continue; kind[y * G + x] = 3; cost[y * G + x] = WOOD * 1.6; }
-  for (const w of L.wires) seg(w, (x, y) => { kind[y * G + x] = 1; cost[y * G + x] = WIRE; });
-  lamps = L.lamps; path = []; tips = []; reach = 0; back = -1; lit = lamps.map(() => 0); hit = 0; flash = 0; dist = null; }
-function strike(sx, sy) { // Dijkstra over the whole field; the first ground cell reached ends the main channel
-  const d = new Float64Array(G * G).fill(1e9), from = new Int32Array(G * G).fill(-1), heap = [[0, sy * G + sx]]; d[sy * G + sx] = 0; let end = -1, lim = 1e9;
-  while (heap.length) { let m = 0; for (let k = 1; k < heap.length; k++) if (heap[k][0] < heap[m][0]) m = k;
-    const [dk, i] = heap.splice(m, 1)[0]; if (dk > d[i]) continue; if (dk > lim) break; const x = i % G, y = (i - x) / G; if (y === G - 1 && end < 0) { end = i; lim = dk * 1.02; }
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= G || Y >= G) continue;
-      const j = Y * G + X, nd = dk + 0.5 * (cost[i] + cost[j]) * Math.hypot(dx, dy); if (nd < d[j]) { d[j] = nd; from[j] = i; heap.push([nd, j]); } } }
+    cost[y * G + x] = AIR * (0.7 + 1.5 * s); kind[y * G + x] = AIRK; }
+  const put = (x, y, k, c) => { if (x < 0 || y < 0 || x >= G || y >= G) return; kind[y * G + x] = k; cost[y * G + x] = c; };
+  for (const a of L.rain || []) seg(a, (x, y) => { for (let d = -3; d <= 3; d++) put(x + d, y, RAINK, RAIN); });
+  for (const t of L.tips || []) for (let y = t[1] - t[2]; y <= t[1] + t[2]; y++) for (let x = t[0] - t[2]; x <= t[0] + t[2]; x++) { const d = Math.hypot(x - t[0], y - t[1]) / t[2]; if (d < 1 && x >= 0 && y >= 0 && x < G && y < G) cost[y * G + x] *= 0.3 + 0.7 * d * d; }
+  for (const l of L.lakes || []) for (let y = G - 3; y < G; y++) for (let x = l[0]; x <= l[1]; x++) put(x, y, LAKEK, LAKE);
+  for (const b of L.boats || []) for (let y = G - 9; y <= G - 3; y++) for (let x = b - 3; x <= b + 3; x++) if (y >= G - 4 || Math.abs(x - b) < 1) put(x, y, BOATK, WOOD);
+  for (const t of L.trees || []) { const R = t[2] || 6; for (let y = t[1]; y < G; y++) put(t[0], y, TREEK, WOOD);
+    for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) if (x * x + y * y <= R * R) put(t[0] + x, t[1] + y, TREEK, WOOD); }
+  for (const h of L.houses || []) for (let y = h[1] - 9; y < G; y++) for (let x = h[0] - 7; x <= h[0] + 7; x++) { if (y < h[1] && Math.abs(x - h[0]) > (y - (h[1] - 9)) * 0.85) continue; put(x, y, HOUSEK, WOOD * 1.6); }
+  for (const p of L.poles || []) seg([p[0], p[1], p[0], G - 1], (x, y) => put(x, y, POLEK, POLE));
+  for (const w of L.wires) seg(w, (x, y) => put(x, y, METALK, METAL));
+  path = []; tips = []; hit = 0; lit = (L.lamps || []).map(() => 0); dEnd = 0; }
+const canStart = x => { const c = LVL.cloud || [0, G - 1]; return x >= c[0] && x <= c[1] && kind[BASE * G + x] !== METALK; };
+function push(k, v) { let i = hk.length; hk.push(k); hv.push(v); while (i) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; }
+function pop() { const k = hk[0], v = hv[0], lk = hk.pop(), lv = hv.pop(); if (hk.length) { let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hk.length) break; if (c + 1 < hk.length && hk[c + 1] < hk[c]) c++; if (hk[c] >= lk) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = lk; hv[i] = lv; } return v; }
+function strike(sx) { const s0 = BASE * G + sx; dist.fill(1e9); from.fill(-1); hk = []; hv = []; dist[s0] = 0; push(0, s0); let end = -1, lim = 1e9;
+  while (hk.length) { const dk = hk[0], i = pop(); if (dk > dist[i]) continue; if (dk > lim) break; const x = i % G, y = (i - x) / G; if (y === G - 1 && end < 0) { end = i; lim = dk * 1.02; }
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const X = x + dx, Y = y + dy; if (X < 0 || Y < BASE || X >= G || Y >= G) continue;
+      const j = Y * G + X, open = kind[i] === AIRK || kind[j] === AIRK, f = !open ? (dx && dy ? 1.4142 : 1) : dy > 0 ? (dx ? 1.4142 * DIAG : 1) : dy < 0 ? UP * (dx ? 1.4142 : 1) : SIDE, nd = dk + 0.5 * (cost[i] + cost[j]) * f; if (nd < dist[j]) { dist[j] = nd; from[j] = i; push(nd, j); } } }
   const walk = e => { const p = []; for (let i = e; i >= 0; i = from[i]) p.push(i); return p.reverse(); };
-  dist = d; dEnd = d[end]; path = walk(end);
+  dEnd = dist[end]; path = walk(end);
   // side branches of the leader: other cells it had reached by the time the main channel landed
-  const r = rng(sx * 131 + sy * 17 + 3), onMain = new Uint8Array(G * G); for (const i of path) onMain[i] = 1; tips = [];
-  for (let tries = 0; tries < 400 && tips.length < 16; tries++) { const i = (r() * G * G) | 0; if (d[i] > dEnd * 0.98 || d[i] < dEnd * 0.25 || kind[i] === 1) continue; const p = walk(i); let k = 0; while (k < p.length && onMain[p[k]]) k++; if (p.length - k < 5) continue; tips.push(p.slice(Math.max(0, k - 1))); } }
+  const r = rng(sx * 131 + 3), onMain = new Uint8Array(G * G); for (const i of path) onMain[i] = 1; tips = [];
+  for (let tries = 0; tries < 600 && tips.length < 18; tries++) { const i = (r() * G * G) | 0; if (dist[i] > dEnd * 0.97 || dist[i] < dEnd * 0.15 || kind[i] === METALK) continue; const p = walk(i); let k = 0; while (k < p.length && onMain[p[k]]) k++; if (p.length - k < 6) continue; tips.push(p.slice(Math.max(0, k - 1))); }
+  hit = 0; lit = (LVL.lamps || []).map(() => 0);
+  for (const i of path) { const x = i % G, y = (i - x) / G, k = kind[i]; if (k === TREEK || k === HOUSEK || k === BOATK) hit = hit || k; LVL.lamps.forEach((l, q) => { if (Math.abs(l[0] - x) <= 1 && Math.abs(l[1] - y) <= 1) lit[q] = 1; }); } }
+const won = () => !hit && lit.every(v => v);
+const LEVELS = [
+  {"name": "Найлегший шлях", "text": "Блискавка народжується біля основи грозової хмари й іде до землі найлегшим шляхом. Метал проводить струм у десятки разів краще за повітря. Торкніться неба: звідти вдарить блискавка. Влучте нею в щоглу з ліхтарем.", "seed": 0, "wires": [[60, 34, 60, 95]], "lamps": [[60, 62]], "tips": [], "bx": 60},
+  {"name": "Дріт на стовпах", "text": "Дерев’яні стовпи проводять погано, металевий дріт добре. Землю дріт має лише в щоглі праворуч. Запаліть обидва ліхтарі й не влучте в дерево.", "seed": 1, "poles": [[22, 40]], "wires": [[22, 40, 72, 48], [72, 48, 72, 95]], "lamps": [[24, 40], [72, 72]], "trees": [[48, 64, 6], [10, 50, 6]], "bx": 26},
+  {"name": "Дощ і відвід", "text": "У відкритому повітрі блискавка йде переважно вниз: убік їй важче. Але щільна смуга дощу проводить удвічі краще й веде розряд навскіс. Гроза стоїть лише над лівою частиною неба. Спрямуйте удар у відвід, а не в дах.", "seed": 2, "cloud": [0, 52], "wires": [[72, 40, 72, 95]], "lamps": [[72, 66]], "houses": [[22, 86], [46, 86]], "rain": [[30, 13, 44, 70], [46, 13, 68, 40]], "tips": [[72, 40, 4]], "bx": 44},
+  {"name": "Озеро", "text": "Вода проводить добре, тому блискавка любить озеро. А в озері рибалить човен. Смуги дощу ведуть розряд навскіс: одна до човна, друга до щогли на березі. Запаліть ліхтар і не влучте в човен.", "seed": 5, "cloud": [0, 74], "lakes": [[18, 78]], "boats": [58], "wires": [[88, 58, 88, 95]], "lamps": [[88, 78]], "rain": [[36, 13, 58, 80], [66, 13, 84, 52]], "bx": 64},
+  {"name": "Вістря", "text": "Гостре вістря іонізує повітря довкола себе: там воно проводить краще, і вістря притягує удари збоку. Так відвід захищає хати навколо. Але високе дерево поруч теж чекає на свій удар.", "seed": 3, "wires": [[50, 64, 50, 95]], "lamps": [[50, 80]], "tips": [[50, 64, 9]], "houses": [[30, 86], [70, 86]], "trees": [[86, 48, 6], [12, 52, 6]], "bx": 50},
+  {"name": "Гроза над лісом", "text": "Над лісом стоїть щогла з ліхтарем, а довкола дерева майже такі самі заввишки. Удар піде в те, що ближче під ним. Знайдіть вузьке вікно над щоглою.", "seed": 6, "trees": [[12, 50, 6], [24, 44, 6], [36, 48, 6], [48, 40, 5], [64, 40, 5], [76, 50, 6], [86, 44, 6]], "wires": [[56, 36, 56, 95]], "lamps": [[56, 76]], "tips": [[56, 36, 3]], "bx": 57},
+  {"name": "Лінія", "text": "Лінія електропередач на дерев’яних стовпах, заземлена лише в щоглі праворуч. Щоб засвітились обидва ліхтарі, струм має увійти в дріт лівіше від першого з них. А дерево й дощ тягнуть удар на себе.", "seed": 4, "poles": [[14, 46], [40, 46], [66, 46]], "wires": [[14, 46, 90, 46], [90, 46, 90, 95]], "lamps": [[44, 46], [60, 46]], "trees": [[24, 44, 6]], "rain": [[70, 13, 84, 40]], "bx": 45}];
+// ---- drawing ----------------------------------------------------------------------------------------------------
+// Everything in the bolt is kept in cell units and only scaled when drawn, so it stays the same at any canvas size.
+let mainG = [], tipG = [], reach = 0, back = -1, post = 0, flash = 0, blobs = [], streamFrom = [], crawl = null, crawlT = 0, bg = null, bgKey = '', splash = [], lastNow = 0, amb = 0;
+function jag(cells, seed) { // a smooth, forked-looking channel through the cells: anchor every 3rd cell, then displace midpoints twice
+  const r = rng(seed), pts = []; for (let k = 0; k < cells.length; k += 3) { const i = cells[k], x = i % G; pts.push({ x: x + 0.5 + (k ? (r() - 0.5) * 1.1 : 0), y: (i - x) / G + 0.5, d: dist[i] }); }
+  const last = cells[cells.length - 1], lx = last % G; pts.push({ x: lx + 0.5, y: (last - lx) / G + 0.5, d: dist[last] });
+  let p = pts; for (let s = 0; s < 2; s++) { const q = [p[0]]; for (let k = 1; k < p.length; k++) { const a = p[k - 1], b = p[k], dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1, o = (r() - 0.5) * l * (s ? 0.28 : 0.42);
+    q.push({ x: (a.x + b.x) / 2 - dy / l * o, y: (a.y + b.y) / 2 + dx / l * o, d: (a.d + b.d) / 2 }, b); } p = q; } return p; }
+function strokeTo(g, pts, K, lim, from) { g.beginPath(); let on = false; for (let k = from || 0; k < pts.length; k++) { const p = pts[k]; if (p.d > lim) { if (on && k) { const a = pts[k - 1], f = Math.max(0, Math.min(1, (lim - a.d) / (p.d - a.d || 1))); g.lineTo((a.x + (p.x - a.x) * f) * K, (a.y + (p.y - a.y) * f) * K); } break; } on ? g.lineTo(p.x * K, p.y * K) : g.moveTo(p.x * K, p.y * K); on = true; } }
+function glowLine(g, draw, K, u, I, w, hue) { // three passes: a wide coloured halo, a bright sheath and a white core
+  g.save(); g.lineJoin = g.lineCap = 'round'; g.globalCompositeOperation = 'lighter';
+  g.shadowColor = hue; g.shadowBlur = 26 * u * I; g.strokeStyle = 'rgba(150,160,255,' + 0.22 * I + ')'; g.lineWidth = K * 2.4 * w; draw(); g.stroke();
+  g.shadowBlur = 10 * u * I; g.strokeStyle = 'rgba(205,215,255,' + 0.6 * I + ')'; g.lineWidth = K * 0.9 * w; draw(); g.stroke();
+  g.shadowBlur = 0; g.strokeStyle = 'rgba(255,255,255,' + Math.min(1, I * 1.2) + ')'; g.lineWidth = Math.max(1, K * 0.34 * w); draw(); g.stroke(); g.restore(); }
+function strikeAll(x) { strike(x); mainG = jag(path, x * 7 + 1); tipG = tips.map((p, k) => jag(p, x * 31 + k * 5)); reach = 0; back = -1; post = 0; flash = 0; }
+function pulse(t) { let I = 0; for (const [t0, a] of [[0, 1], [7, 0.65], [15, 0.85], [27, 0.5], [40, 0.3]]) if (t >= t0) I = Math.max(I, a * Math.exp(-(t - t0) / 2.6)); return I; }
+function paintBg(size, K) { const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d'), r = rng(19 + (LVL.seed || 0));
+  const sky = g.createLinearGradient(0, 0, 0, size); sky.addColorStop(0, '#070b16'); sky.addColorStop(0.35, '#121a2e'); sky.addColorStop(0.8, '#1f2c40'); sky.addColorStop(1, '#2a3a46'); g.fillStyle = sky; g.fillRect(0, 0, size, size);
+  // far hills with a few windows still lit, and a nearer ridge
+  for (const [base, amp, col, lights] of [[82, 7, '#141d2c', 1], [87, 4, '#101823', 0]]) { g.fillStyle = col; g.beginPath(); g.moveTo(0, size); const p = r() * 6; for (let x = 0; x <= G; x++) g.lineTo(x * K, (base - amp * (0.55 + 0.45 * Math.sin(x * 0.08 + p)) - amp * 0.25 * Math.sin(x * 0.31 + p * 2)) * K); g.lineTo(size, size); g.fill();
+    if (lights) for (let k = 0; k < 14; k++) { const x = r() * G, y = base - amp * 0.4 + r() * 3; g.fillStyle = 'rgba(255,' + (190 + 40 * r() | 0) + ',110,' + (0.35 + 0.4 * r()) + ')'; g.fillRect(x * K, y * K, K * 0.35, K * 0.3); } }
+  // the ground: dark wet grass with a ragged top
+  const gy = (G - 2) * K; g.fillStyle = '#0c1410'; g.fillRect(0, gy, size, size - gy);
+  g.strokeStyle = '#13221a'; g.lineWidth = Math.max(1, K * 0.18); g.beginPath(); for (let k = 0; k < 700; k++) { const x = r() * size; if ((LVL.lakes || []).some(l => x > l[0] * K && x < (l[1] + 1) * K)) continue; g.moveTo(x, gy + K * 0.4); g.lineTo(x + (r() - 0.5) * K * 0.8, gy - K * (0.3 + r() * 1.1)); } g.stroke();
+  for (const l of LVL.lakes || []) { const x0 = l[0] * K, x1 = (l[1] + 1) * K, wg = g.createLinearGradient(0, gy - K * 0.3, 0, size); wg.addColorStop(0, '#1f3148'); wg.addColorStop(1, '#0b1522'); g.fillStyle = wg; g.beginPath(); g.moveTo(x0 - K, gy + K * 0.2); g.quadraticCurveTo(x0, gy - K * 0.4, x0 + K * 2, gy - K * 0.3); g.lineTo(x1 - K * 2, gy - K * 0.3); g.quadraticCurveTo(x1, gy - K * 0.4, x1 + K, gy + K * 0.2); g.lineTo(x1 + K, size); g.lineTo(x0 - K, size); g.fill();
+    g.strokeStyle = 'rgba(150,180,220,.18)'; g.lineWidth = Math.max(1, K * 0.12); for (let k = 0; k < 40; k++) { const x = x0 + r() * (x1 - x0), y = gy + r() * K * 1.8; g.beginPath(); g.moveTo(x, y); g.lineTo(x + K * (1 + r() * 2), y); g.stroke(); } }
+  return c; }
+// The cloud is a texture of layered value noise, made once per level in two lightings (dark and lit by a flash)
+// and blended each frame. The storm cell is thick down to a ragged flat base; outside it only thin high cloud.
+let cloudDark = null, cloudLit = null, cloudTmp = null; const CR = 4, CH = BASE + 6;
+function vnoise(x, y, s) { const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, h = (a, b) => Art.h(a * 374761 + b * 668265 + s * 1013), u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return (h(ix, iy) * (1 - u) + h(ix + 1, iy) * u) * (1 - v) + (h(ix, iy + 1) * (1 - u) + h(ix + 1, iy + 1) * u) * v; }
+function fbm(x, y, s) { let a = 0.5, f = 1, v = 0; for (let o = 0; o < 5; o++) { v += a * vnoise(x * f, y * f, s + o); a *= 0.5; f *= 2.03; } return v; }
+function makeClouds() { const c = LVL.cloud || [0, G - 1], W = G * CR, Hh = CH * CR, s = (LVL.seed || 0) * 7 + 3;
+  const mk = () => { const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh; return cv; }; cloudDark = mk(); cloudLit = mk(); cloudTmp = mk();
+  const dd = cloudDark.getContext('2d').createImageData(W, Hh), ld = cloudLit.getContext('2d').createImageData(W, Hh), sm = (a, b, x) => { const q = Math.max(0, Math.min(1, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
+  for (let py = 0; py < Hh; py++) for (let px = 0; px < W; px++) { const X = px / CR, Y = py / CR, storm = sm(c[0] - 6, c[0] + 2, X) * (1 - sm(c[1] - 2, c[1] + 6, X)), n = fbm(X * 0.085, Y * 0.17, s), n2 = fbm(X * 0.085 + 0.21, Y * 0.17 - 0.3, s);
+    const base = BASE + 0.8 + (fbm(X * 0.2, 3, s + 9) - 0.5) * 2.2, dS = Math.min(1, Math.max(0, n * 1.9 - 0.42)) * sm(base + 0.6, base - 1.4, Y) + sm(base - 2, base - 5, Y) * 0.55, dT = Math.max(0, n * 1.6 - 0.62) * sm(9, 4, Y);
+    const d = Math.min(1, dS * storm + dT * (1 - storm) * 1.6), shade = Math.max(0, Math.min(1, 0.45 + (n2 - n) * 5)), up = 1 - Y / CH, k = (py * W + px) * 4;
+    dd.data[k] = 12 + 60 * shade * up + 6 * up; dd.data[k + 1] = 15 + 66 * shade * up + 8 * up; dd.data[k + 2] = 26 + 84 * shade * up + 14 * up; dd.data[k + 3] = 255 * d;
+    ld.data[k] = 120 + 120 * shade; ld.data[k + 1] = 126 + 118 * shade; ld.data[k + 2] = 168 + 87 * shade; ld.data[k + 3] = 255 * d; }
+  cloudDark.getContext('2d').putImageData(dd, 0, 0); cloudLit.getContext('2d').putImageData(ld, 0, 0);
+  streamFrom = []; const add = (x, y, s) => streamFrom.push({ x: x + 0.5, y: y + 0.5, s });
+  for (const w of LVL.wires) { if (w[0] === w[2]) add(w[0], Math.min(w[1], w[3]) - 1, 1); }
+  for (const t of LVL.trees || []) add(t[0], t[1] - (t[2] || 6), 0.6); for (const h of LVL.houses || []) add(h[0], h[1] - 9, 0.5); for (const b of LVL.boats || []) add(b, G - 9, 0.6); }
+function drawClouds(g, K, now, light, lx) { // light: overall flash 0..1; lx: column of a glow inside the cloud
+  const W = G * K, Hh = CH * K, dx = Math.sin(now / 11000) * K * 0.8; g.save(); g.imageSmoothingEnabled = true; g.drawImage(cloudDark, dx, 0, W, Hh);
+  const L = Math.min(1, light + amb * 0.5); if (L > 0.01) { g.globalAlpha = L; g.drawImage(cloudLit, dx, 0, W, Hh); g.globalAlpha = 1; }
+  if (lx != null) { const tg = cloudTmp.getContext('2d'), cx = lx * CR, cy = (BASE - 2) * CR; tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, cloudTmp.width, cloudTmp.height); tg.drawImage(cloudLit, 0, 0); tg.globalCompositeOperation = 'destination-in';
+    const rg = tg.createRadialGradient(cx, cy, 0, cx, cy, 16 * CR); rg.addColorStop(0, 'rgba(0,0,0,' + (0.55 + 0.45 * Math.random()) + ')'); rg.addColorStop(1, 'rgba(0,0,0,0)'); tg.fillStyle = rg; tg.fillRect(0, 0, cloudTmp.width, cloudTmp.height); g.drawImage(cloudTmp, dx, 0, W, Hh); }
+  g.restore(); }
+function drawMast(g, w, K, glow) { const x = (w[0] + 0.5) * K, y0 = (Math.min(w[1], w[3]) + 0.5) * K, y1 = (G - 2) * K, h = y1 - y0;
+  if ((LVL.poles || []).some(p => p[0] === w[0])) return; // a down-conductor on a wooden pole is drawn with the pole
+  const wb = K * 1.5, wt = K * 0.35; g.save(); g.strokeStyle = glow ? '#f4f7ff' : '#7d8794'; g.lineWidth = Math.max(1, K * 0.22); g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x - wb, y1); g.lineTo(x - wt, y0 + K * 1.5); g.moveTo(x + wb, y1); g.lineTo(x + wt, y0 + K * 1.5); g.stroke();
+  g.lineWidth = Math.max(1, K * 0.12); g.beginPath(); const n = Math.max(3, h / (K * 2.6) | 0); for (let k = 0; k < n; k++) { const f0 = k / n, f1 = (k + 1) / n, wa = wb + (wt - wb) * f0, wc = wb + (wt - wb) * f1, ya = y1 - (h - K * 1.5) * f0, yc = y1 - (h - K * 1.5) * f1; g.moveTo(x - wa, ya); g.lineTo(x + wc, yc); g.moveTo(x + wa, ya); g.lineTo(x - wc, yc); g.moveTo(x - wc, yc); g.lineTo(x + wc, yc); } g.stroke();
+  g.strokeStyle = glow ? '#ffffff' : '#b9c2cc'; g.lineWidth = Math.max(1, K * 0.22); g.beginPath(); g.moveTo(x, y0 + K * 1.5); g.lineTo(x, y0 - K * 0.8); g.stroke(); g.fillStyle = glow ? '#fff' : '#cfd6de'; g.beginPath(); g.moveTo(x, y0 - K * 1.8); g.lineTo(x - K * 0.25, y0 - K * 0.6); g.lineTo(x + K * 0.25, y0 - K * 0.6); g.closePath(); g.fill(); g.restore(); }
+function drawPole(g, p, K) { const x = (p[0] + 0.5) * K, y0 = (p[1] + 0.5) * K, y1 = (G - 2) * K, pg = g.createLinearGradient(x - K * 0.6, 0, x + K * 0.6, 0); pg.addColorStop(0, '#3a2818'); pg.addColorStop(0.4, '#6e4f33'); pg.addColorStop(1, '#2c1e12'); g.fillStyle = pg;
+  g.beginPath(); g.moveTo(x - K * 0.6, y1); g.lineTo(x - K * 0.38, y0); g.lineTo(x + K * 0.38, y0); g.lineTo(x + K * 0.6, y1); g.closePath(); g.fill();
+  g.fillStyle = '#4a3422'; g.fillRect(x - K * 2.6, y0 + K * 0.9, K * 5.2, K * 0.55); for (const d of [-2.1, 2.1]) { g.fillStyle = '#c8d3dd'; g.fillRect(x + d * K - K * 0.22, y0 + K * 0.15, K * 0.44, K * 0.75); g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(x + d * K - K * 0.22, y0 + K * 0.15, K * 0.12, K * 0.75); }
+  g.fillStyle = '#c8d3dd'; g.beginPath(); g.arc(x, y0 - K * 0.1, K * 0.32, 0, 7); g.fill(); }
+function drawBoat(g, b, K, now, burnt) { const x = (b + 0.5) * K, y = (G - 2.4) * K + Math.sin(now / 700) * K * 0.15; g.save(); g.translate(x, y); g.rotate(Math.sin(now / 900) * 0.04);
+  g.fillStyle = 'rgba(160,190,230,.12)'; g.beginPath(); g.ellipse(0, K * 1.1, K * 5, K * 0.6, 0, 0, 7); g.fill();
+  const hg = g.createLinearGradient(0, -K * 0.8, 0, K * 1.2); hg.addColorStop(0, burnt ? '#2a1d14' : '#7a4e2a'); hg.addColorStop(1, burnt ? '#120c08' : '#3a2412'); g.fillStyle = hg; g.beginPath(); g.moveTo(-K * 4, -K * 0.7); g.lineTo(K * 4.2, -K * 0.9); g.quadraticCurveTo(K * 3.6, K * 1.1, K * 2, K * 1.1); g.lineTo(-K * 2.6, K * 1.1); g.quadraticCurveTo(-K * 3.6, K * 0.6, -K * 4, -K * 0.7); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = Math.max(1, K * 0.1); g.beginPath(); g.moveTo(-K * 3.6, K * 0.1); g.lineTo(K * 3.7, -K * 0.05); g.moveTo(-K * 3, K * 0.6); g.lineTo(K * 3, K * 0.55); g.stroke();
+  g.strokeStyle = burnt ? '#1a120c' : '#5a3a20'; g.lineWidth = Math.max(1, K * 0.25); g.beginPath(); g.moveTo(K * 0.3, -K * 0.8); g.lineTo(K * 0.3, -K * 6.4); g.stroke(); if (!burnt) { g.fillStyle = '#c9bfa7'; g.beginPath(); g.moveTo(K * 0.45, -K * 6.1); g.quadraticCurveTo(K * 1.4, -K * 3.6, K * 0.45, -K * 1.3); g.closePath(); g.fill(); }
+  g.fillStyle = burnt ? '#100c0a' : '#2b2f38'; g.beginPath(); g.arc(-K * 1.9, -K * 2.1, K * 0.5, 0, 7); g.fill(); g.fillRect(-K * 2.4, -K * 1.7, K * 1, K * 1.1); g.fillStyle = burnt ? '#100c0a' : '#c98a2a'; g.beginPath(); g.ellipse(-K * 1.9, -K * 2.45, K * 0.75, K * 0.22, 0, 0, 7); g.fill();
+  g.strokeStyle = '#3a2a1a'; g.lineWidth = Math.max(1, K * 0.08); g.beginPath(); g.moveTo(-K * 1.5, -K * 1.6); g.lineTo(-K * 5.5, -K * 3.2); g.stroke(); g.restore(); }
+function drawCable(g, w, K) { const x0 = (w[0] + 0.5) * K, y0 = (w[1] + 0.5) * K, x1 = (w[2] + 0.5) * K, y1 = (w[3] + 0.5) * K, sag = Math.hypot(x1 - x0, y1 - y0) * 0.012;
+  g.strokeStyle = '#1b1f26'; g.lineWidth = Math.max(1.2, K * 0.26); g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo((x0 + x1) / 2, (y0 + y1) / 2 + sag, x1, y1); g.stroke(); g.strokeStyle = 'rgba(170,185,205,.45)'; g.lineWidth = Math.max(1, K * 0.08); g.stroke(); }
+function rainFx(g, K, now, size, u) { const r = rng(5); g.lineCap = 'round';
+  for (const [n, len, a, sp, wdt] of [[90, 1.6, 0.1, 900, 0.08], [70, 2.6, 0.17, 650, 0.12]]) { g.strokeStyle = 'rgba(170,190,230,' + (a + flash * 0.25) + ')'; g.lineWidth = Math.max(1, K * wdt); g.beginPath(); for (let k = 0; k < n; k++) { const x = r() * size, y = ((r() + now / sp) % 1) * size; g.moveTo(x, y); g.lineTo(x - K * 0.5, y + K * len); } g.stroke(); }
+  for (const a of LVL.rain || []) { const dx = (a[2] - a[0]) / (a[3] - a[1]), rr = rng(a[0] * 7 + a[1]); g.lineWidth = Math.max(1, K * 0.12);
+    for (let k = 0; k < 320; k++) { const t = (rr() + now / (480 + 120 * (k % 3))) % 1, off = (rr() + rr() - 1) * 4, edge = Math.max(0, 1 - Math.abs(off) / 4), x = (a[0] + (a[2] - a[0]) * t + off) * K, y = (a[1] + (a[3] - a[1]) * t) * K, len = K * (1.6 + rr() * 2.2);
+      g.strokeStyle = 'rgba(180,200,240,' + ((0.5 + flash * 0.4) * edge * edge * Math.min(1, (1 - t) * 3) * (0.5 + 0.5 * rr())) + ')'; g.beginPath(); g.moveTo(x, y); g.lineTo(x + dx * len, y + len); g.stroke(); }
+    const mg = g.createLinearGradient(0, a[1] * K, 0, a[3] * K); mg.addColorStop(0, 'rgba(110,130,170,.16)'); mg.addColorStop(1, 'rgba(110,130,170,0)'); g.fillStyle = mg; g.beginPath(); g.moveTo((a[0] - 4) * K, a[1] * K); g.lineTo((a[0] + 4) * K, a[1] * K); g.lineTo((a[2] + 2) * K, a[3] * K); g.lineTo((a[2] - 2) * K, a[3] * K); g.closePath(); g.filter = 'blur(' + (K * 1.5).toFixed(1) + 'px)'; g.fill(); g.filter = 'none'; }
+  // splashes on the ground
+  if (splash.length < 40) splash.push({ x: Math.random() * G, t: 0 }); g.strokeStyle = 'rgba(180,200,235,.35)'; g.lineWidth = Math.max(1, K * 0.08); for (const s of splash) { s.t += 0.05; const rr = s.t * K * 0.9; g.globalAlpha = Math.max(0, 1 - s.t); g.beginPath(); g.ellipse(s.x * K, (G - 2) * K, rr, rr * 0.3, 0, Math.PI, 0); g.stroke(); } g.globalAlpha = 1; splash = splash.filter(s => s.t < 1); }
+function makeCrawl() { const r = Math.random, c = LVL.cloud || [0, G - 1], x0 = c[0] + r() * (c[1] - c[0]), dir = r() < 0.5 ? -1 : 1, pts = [{ x: x0, y: BASE - 1.5 }], br = [];
+  for (let k = 0; k < 26; k++) { const p = pts[pts.length - 1]; pts.push({ x: p.x + dir * (1.2 + r() * 1.6), y: Math.max(BASE - 6, Math.min(BASE + 0.5, p.y + (r() - 0.5) * 1.6)) }); if (r() < 0.3) { const q = [{ ...pts[pts.length - 1] }]; for (let j = 0; j < 5; j++) { const b = q[q.length - 1]; q.push({ x: b.x + dir * (0.6 + r()) + (r() - 0.5), y: b.y + (r() - 0.6) * 1.6 }); } br.push(q); } }
+  return { pts, br, x: x0 + dir * 20 }; }
 Proto({
-  G, levels: LEVELS, build, speed: 1, idleText: 'Торкніться неба: звідти вдарить блискавка.',
-  tap(x, y) { const k = kind[y * G + x]; if (k && k !== 4) { this.say('Почніть у повітрі, а не на дроті, дереві чи хаті.'); return false; } strike(x, y); reach = 0; back = -1; this.say('Лідер шукає дорогу…'); },
-  step() { if (back < 0) { reach += dEnd / 34; if (reach >= dEnd) { back = 0; flash = 1; this.say('Зворотний удар!'); } }
-    else { back += path.length / 9; for (const i of path) { const x = i % G, y = (i - x) / G; if (kind[i] === 2 || kind[i] === 3) hit = kind[i]; lamps.forEach((l, k) => { if (Math.abs(l[0] - x) <= 1 && Math.abs(l[1] - y) <= 1) lit[k] = 1; }); } } },
-  verdict() { if (back < path.length || !path.length) return 0; return !hit && lit.every(v => v) ? 1 : -1; },
-  winText: () => 'Струм пройшов дротом і запалив ліхтарі.',
-  failText: () => hit === 2 ? 'Блискавка влучила в дерево: для неї це був легший шлях.' : hit === 3 ? 'Блискавка влучила в хату: до даху було ближче й легше, ніж до відводу.' : lit.some(v => v) ? 'Засвітився не кожен ліхтар: блискавка зайшла на дріт нижче одного з них.' : 'Блискавка знайшла легший шлях до землі повз ліхтарі.',
-  after() { flash *= 0.9; },
+  G, levels: LEVELS, speed: 1, slowmo: 0.2, idleText: 'Торкніться неба над тим місцем, звідки має вдарити блискавка.',
+  build(L) { liBuild(L); L.best = [L.bx, BASE]; mainG = []; tipG = []; reach = 0; back = -1; post = 0; flash = 0; crawl = null; makeClouds(); bgKey = ''; },
+  tap(x) { if (!canStart(x)) { this.say((LVL.cloud ? 'Над цим місцем немає грозової хмари. ' : 'Тут стоїть щогла. ') + 'Торкніться неба під хмарою.'); return false; } strikeAll(x); this.say('Лідер шукає дорогу вниз…'); },
+  step() { if (back < 0) { reach += dEnd / 40; if (reach >= dEnd) { back = 0; flash = 1; this.say('Зворотний удар!'); } } else if (back < mainG.length) back += mainG.length / 7; else post++; },
+  verdict() { if (back < mainG.length || !mainG.length || post < 1) return 0; return won() ? 1 : -1; },
+  winText: () => 'Струм пройшов металом і запалив ' + (LVL.lamps.length > 1 ? 'усі ліхтарі.' : 'ліхтар.'),
+  failText: () => hit === TREEK ? 'Блискавка влучила в дерево: воно стояло ближче й вище, ніж метал.' : hit === HOUSEK ? 'Блискавка влучила в хату.' : hit === BOATK ? 'Блискавка влучила в човен.' : lit.some(v => v) ? 'Засвітився не кожен ліхтар: струм зайшов на дріт не там.' : 'Блискавка пішла в землю повз метал.',
+  after() { post++; },
   draw(g, K, now, size) {
-    const u = size / 600, fl = flash > 0.02 ? flash : 0, shake = fl * 4 * u; g.save(); g.translate((Math.sin(now / 13) * shake), (Math.cos(now / 17) * shake));
-    const sky = g.createLinearGradient(0, 0, 0, size); sky.addColorStop(0, '#0e1326'); sky.addColorStop(0.7, '#1e2b45'); sky.addColorStop(1, '#22333a'); g.fillStyle = sky; g.fillRect(-10, -10, size + 20, size + 20);
-    const r = rng(5);
-    g.fillStyle = '#16213a'; g.beginPath(); g.moveTo(0, 80 * K); for (let x = 0; x <= G; x += 6) g.lineTo(x * K, (78 - 6 * Math.sin(x * 0.11) - 3 * Math.sin(x * 0.37 + 1)) * K); g.lineTo(size, size); g.lineTo(0, size); g.fill();
-    for (let k = 0; k < 16; k++) { const cx = r() * size, cy = (1 + r() * 11) * K, a = 0.10 + 0.07 * r() + fl * 0.25; g.fillStyle = 'rgba(' + (150 + 90 * fl | 0) + ',' + (160 + 80 * fl | 0) + ',' + (190 + 60 * fl | 0) + ',' + a + ')'; g.beginPath(); g.ellipse(cx, cy, (9 + r() * 16) * K, (3 + r() * 4) * K, 0, 0, 7); g.fill(); }
-    // rain: thin everywhere, dense in the shafts that conduct
-    g.strokeStyle = 'rgba(170,190,230,.17)'; g.lineWidth = Math.max(1, K * 0.11); g.beginPath(); for (let k = 0; k < 110; k++) { const x = r() * size, y = ((r() + now / 800) % 1) * size; g.moveTo(x, y); g.lineTo(x - K * 0.7, y + K * 2.6); } g.stroke();
-    for (const a of LVL.rain) { g.strokeStyle = 'rgba(150,185,235,.34)'; g.lineWidth = Math.max(1, K * 0.16); g.beginPath(); const rr = rng(a[0] * 7 + a[1]);
-      for (let k = 0; k < 150; k++) { const t = (rr() + now / 620) % 1, off = (rr() - 0.5) * 7, x = (a[0] + (a[2] - a[0]) * t + off) * K, y = (a[1] + (a[3] - a[1]) * t) * K, dx = (a[2] - a[0]) / (a[3] - a[1]); g.moveTo(x, y); g.lineTo(x + dx * K * 2.4, y + K * 2.4); } g.stroke(); }
-    // ground, wet and reflecting the flash
-    const gr = g.createLinearGradient(0, (G - 3) * K, 0, size); gr.addColorStop(0, fl ? '#3c4a52' : '#1b2a24'); gr.addColorStop(1, '#0f1814'); g.fillStyle = gr; g.fillRect(-10, (G - 3) * K, size + 20, 3 * K + 10);
-    for (const t of LVL.trees) Art.tree(g, (t[0] + 0.5) * K, (G - 2) * K, (G - 2 - t[1]) * K, 6.6 * K, t[0], { burnt: hit === 2 && back >= path.length });
-    for (const h of LVL.houses) Art.house(g, (h[0] + 0.5) * K, (G - 2) * K, K, { w: 14 * K, h: (G - 2 - h[1]) * K, r: 9 * K, burnt: hit === 3 && back >= path.length, now });
-    g.strokeStyle = '#9aa5b3'; g.lineWidth = Math.max(1.5, K * 0.36); g.lineCap = 'round'; g.beginPath(); for (const w of LVL.wires) { g.moveTo((w[0] + 0.5) * K, (w[1] + 0.5) * K); g.lineTo((w[2] + 0.5) * K, (w[3] + 0.5) * K); } g.stroke();
-    for (const w of LVL.wires) if (w[0] === w[2]) { g.fillStyle = '#d5dde6'; g.beginPath(); g.moveTo((w[0] + 0.5) * K, (Math.min(w[1], w[3]) - 1.6) * K); g.lineTo((w[0] - 0.2) * K, Math.min(w[1], w[3]) * K + K); g.lineTo((w[0] + 1.2) * K, Math.min(w[1], w[3]) * K + K); g.fill(); }
-    lamps.forEach((l, k) => Art.lamp(g, (l[0] + 0.5) * K, (l[1] + 0.5) * K, K * 0.9, lit[k]));
-    if (path.length) { const jit = i => Math.sin(i * 12.9898) * K * 0.28, px = i => (i % G + 0.5) * K + jit(i), py = i => (((i / G) | 0) + 0.5) * K, lead = back < 0, fade = lead ? 1 : Math.max(0, 1 - back / path.length * 1.5);
-      g.lineJoin = 'round';
-      // the leader: dim, violet, every branch growing at the pace of its own resistance
-      const drawTo = (p, lw, col) => { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); let on = false; for (const i of p) { if (dist[i] > reach) break; on ? g.lineTo(px(i), py(i)) : g.moveTo(px(i), py(i)); on = true; } g.stroke(); };
-      if (fade > 0) { g.save(); g.shadowColor = '#a78bfa'; g.shadowBlur = 8 * u; for (const p of tips) drawTo(p, Math.max(1, K * 0.16), 'rgba(196,181,253,' + (0.55 * fade * (0.6 + 0.4 * Math.sin(now / 37 + p.length))) + ')'); if (lead) drawTo(path, Math.max(1, K * 0.2), 'rgba(221,214,254,.8)'); g.restore(); }
-      // the return stroke climbs from the ground along the one channel that connected
-      if (!lead) { const upto = Math.min(path.length, Math.ceil(back)); g.save(); g.shadowColor = '#cfe0ff'; g.shadowBlur = 18 * u; g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, K * 0.55); g.beginPath();
-        for (let k = path.length - 1; k >= path.length - upto; k--) { const i = path[k]; k === path.length - 1 ? g.moveTo(px(i), py(i)) : g.lineTo(px(i), py(i)); } g.stroke(); g.restore(); }
-      const i0 = path[0]; g.fillStyle = '#fff'; g.beginPath(); g.arc(px(i0), py(i0), 0.9 * K, 0, 7); g.fill(); }
+    const u = size / 600, dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
+    if (back >= 0) flash = pulse(post + (back >= mainG.length ? 0 : 0)); else flash = 0;
+    amb = this.state === 'idle' || this.state === 'card' ? Math.max(0, Math.sin(now / 1300) * Math.sin(now / 470 + 1) - 0.82) * 2.5 : 0; // the cloud grumbles while it waits
+    const key = size + ':' + LEVELS.indexOf(LVL); if (key !== bgKey) { bg = paintBg(size, K); bgKey = key; }
+    const shake = flash * 3 * u; g.save(); g.translate(Math.sin(now / 13) * shake, Math.cos(now / 17) * shake); g.drawImage(bg, 0, 0);
+    // after a win, discharges crawl along the cloud base
+    if (this.state === 'win' && post > 50) { crawlT -= dt; if (crawlT <= 0) { crawl = makeCrawl(); crawl.t = 0; crawlT = 0.9 + Math.random() * 1.6; } }
+    let cl = 0; if (crawl) { crawl.t += dt; cl = Math.max(0, 1 - crawl.t / 0.45) * (0.6 + 0.4 * Math.sin(crawl.t * 60)); if (crawl.t > 0.45) crawl = null; }
+    const leadGlow = back < 0 && mainG.length ? 0.15 + 0.15 * Math.random() : 0;
+    drawClouds(g, K, now, Math.min(1, flash * 0.9 + cl * 0.35), mainG.length && back < 0 ? mainG[0].x : crawl ? crawl.x : null);
+    if (crawl && cl > 0) { const dr = (p) => () => { g.beginPath(); p.forEach((q, k) => k ? g.lineTo(q.x * K, q.y * K) : g.moveTo(q.x * K, q.y * K)); }; glowLine(g, dr(crawl.pts), K, u, cl, 0.55, '#b9a8ff'); for (const b of crawl.br) glowLine(g, dr(b), K, u, cl * 0.7, 0.35, '#b9a8ff'); }
+    rainFx(g, K, now, size, u);
+    // trees, houses, poles, masts, cables, the boat
+    for (const t of LVL.trees || []) Art.tree(g, (t[0] + 0.5) * K, (G - 2) * K, (G - 2 - t[1]) * K, (t[2] || 6) * 1.15 * K, t[0], { burnt: hit === TREEK && back >= 0 && path.some(i => kind[i] === TREEK && Math.abs(i % G - t[0]) <= (t[2] || 6)) });
+    for (const h of LVL.houses || []) Art.house(g, (h[0] + 0.5) * K, (G - 2) * K, K, { w: 14 * K, h: (G - 2 - h[1]) * K, r: 9 * K, burnt: hit === HOUSEK && back >= 0 && path.some(i => kind[i] === HOUSEK && Math.abs(i % G - h[0]) <= 7), lit: flash < 0.3, now });
+    for (const p of LVL.poles || []) drawPole(g, p, K);
+    for (const w of LVL.wires) if (w[0] !== w[2]) drawCable(g, w, K); else if ((LVL.poles || []).some(p => p[0] === w[0])) { g.strokeStyle = '#8a939e'; g.lineWidth = Math.max(1, K * 0.14); g.beginPath(); g.moveTo((w[0] + 1) * K, (w[1] + 1) * K); g.lineTo((w[0] + 1) * K, (G - 2) * K); g.stroke(); } else drawMast(g, w, K, back >= 0 && flash > 0.3 && path.some(i => kind[i] === METALK && i % G === w[0]));
+    for (const b of LVL.boats || []) drawBoat(g, b, K, now, hit === BOATK && back >= 0);
+    // corona on the sharp tips: a bluish glow that grows as the leader comes near
+    const prog = mainG.length && back < 0 ? reach / dEnd : 0;
+    for (const t of LVL.tips || []) { const x = (t[0] + 0.5) * K, y = (t[1] - 1) * K, s = 0.35 + 0.3 * Math.sin(now / 90) * Math.sin(now / 37) + prog * 1.2, rad = (2 + t[2] * 0.25) * K * (0.8 + s * 0.4);
+      g.save(); g.globalCompositeOperation = 'lighter'; const cg = g.createRadialGradient(x, y, 0, x, y, rad); cg.addColorStop(0, 'rgba(170,200,255,' + Math.min(0.9, 0.35 * s + 0.1) + ')'); cg.addColorStop(1, 'rgba(120,140,255,0)'); g.fillStyle = cg; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      g.strokeStyle = 'rgba(200,215,255,' + Math.min(0.9, 0.5 * s) + ')'; g.lineWidth = Math.max(1, K * 0.08); g.beginPath(); for (let k = 0; k < 7; k++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, l = rad * (0.3 + Math.random() * 0.5); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); } g.stroke(); g.restore(); }
+    // upward streamers: every tall object reaches up as the leader comes near; the one that meets it wins
+    if (prog > 0.55) for (const s of streamFrom) { const len = (prog - 0.55) / 0.45 * 5 * s.s, r = rng((s.x * 13 | 0) + (now / 60 | 0)), pts = [{ x: s.x, y: s.y }]; for (let k = 1; k <= 4; k++) pts.push({ x: s.x + (r() - 0.5) * 1.2, y: s.y - len * k / 4 }); glowLine(g, () => { g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(p.x * K, p.y * K) : g.moveTo(p.x * K, p.y * K)); }, K, u, 0.35 + 0.3 * r(), 0.3, '#a9b8ff'); }
+    LVL.lamps.forEach((l, k) => Art.lamp(g, (l[0] + 0.5) * K, (l[1] + 0.5) * K, K * 0.9, lit[k] && back >= 0 && (back >= mainG.length * (1 - (path.findIndex(i => Math.abs(i % G - l[0]) <= 1 && Math.abs((i / G | 0) - l[1]) <= 1) / path.length)))));
+    if (mainG.length) {
+      // the stepped leader: faint, violet, every branch growing at the pace of its own resistance
+      const fade = back < 0 ? 1 : Math.max(0, 1 - post / 10);
+      if (fade > 0) for (const p of tipG) glowLine(g, () => strokeTo(g, p, K, reach), K, u, 0.45 * fade * (0.7 + 0.3 * Math.sin(now / 31 + p.length)), 0.28, '#9f8cff');
+      if (back < 0) glowLine(g, () => strokeTo(g, mainG, K, reach), K, u, 0.6, 0.38, '#b6a6ff');
+      else { // the return stroke climbs from the ground, then the channel flashes again and cools
+        const from = Math.max(0, Math.floor(mainG.length - back)), I = back < mainG.length ? 1 : Math.max(flash, 0.12 * Math.max(0, 1 - post / 90));
+        glowLine(g, () => strokeTo(g, mainG, K, 1e9, from), K, u, I, 1, '#c9d6ff');
+        if (I < 0.3 && post < 90) { g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(255,150,80,' + 0.25 * (1 - post / 90) + ')'; g.lineWidth = K * 0.35; strokeTo(g, mainG, K, 1e9); g.stroke(); g.restore(); } } }
     g.restore();
-    if (fl) { g.fillStyle = 'rgba(225,235,255,' + (fl * 0.4) + ')'; g.fillRect(0, 0, size, size); }
-    if (this.hover && this.state === 'idle') { g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = Math.max(1, K * 0.2); g.beginPath(); g.arc((this.hover[0] + 0.5) * K, (this.hover[1] + 0.5) * K, 1.6 * K, 0, 7); g.stroke(); }
+    if (flash > 0.02) { g.save(); g.globalCompositeOperation = 'lighter'; const b = mainG[mainG.length - 1] || { x: G / 2, y: G }, fg = g.createRadialGradient(b.x * K, b.y * K, 0, b.x * K, b.y * K, size * 0.9); fg.addColorStop(0, 'rgba(200,215,255,' + flash * 0.45 + ')'); fg.addColorStop(1, 'rgba(120,140,200,' + flash * 0.12 + ')'); g.fillStyle = fg; g.fillRect(0, 0, size, size); g.restore(); }
+    if (this.hover && this.state === 'idle' && canStart(this.hover[0])) { const x = (this.hover[0] + 0.5) * K, y = (BASE + 0.4) * K; g.save(); g.globalCompositeOperation = 'lighter'; const hg = g.createRadialGradient(x, y, 0, x, y, 3.5 * K); hg.addColorStop(0, 'rgba(210,200,255,.8)'); hg.addColorStop(1, 'rgba(160,140,255,0)'); g.fillStyle = hg; g.fillRect(x - 3.5 * K, y - 3.5 * K, 7 * K, 7 * K);
+      g.strokeStyle = 'rgba(220,210,255,.7)'; g.lineWidth = Math.max(1, K * 0.1); g.beginPath(); const r = rng(now / 80 | 0); for (let k = 0; k < 4; k++) { let px = x, py = y; g.moveTo(px, py); for (let j = 0; j < 3; j++) { px += (r() - 0.5) * K * 1.6; py += r() * K * 1.1; g.lineTo(px, py); } } g.stroke(); g.restore(); }
   }
 });
 </script></body></html>

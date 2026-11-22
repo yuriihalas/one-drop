@@ -9,15 +9,17 @@
 //   verdict() 0 still running, 1 won, -1 lost
 //   failText() why it was lost
 //   draw(g, K, now) paint everything; K is pixels per cell
+//   slowmo   if set, a win is replayed once at this fraction of normal speed, framed like a slow-motion shot;
+//            P.state is 'replay' while it plays and P.slow is the replay's progress clock in seconds
 function Proto(P) {
   const $ = id => document.getElementById(id);
   document.body.insertAdjacentHTML('beforeend',
     '<div id="wrap"><div id="top"><a href="index.html">← Стихії</a><b id="lvname"></b><span id="lvs"></span></div>' +
     '<div id="stage"><canvas id="cv"></canvas><div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button class="go" id="cgo">Почати</button></div></div></div>' +
-    '<div id="bar"><div id="msg"></div><button id="hint">Підказка</button><button id="again">Ще раз</button><button id="next" class="go">Далі</button></div>' +
+    '<div id="bar"><div id="msg"></div><button id="replay">Повтор</button><button id="hint">Підказка</button><button id="again">Ще раз</button><button id="next" class="go">Далі</button></div>' +
     '<div id="sub">Прототип. Один дотик на спробу. Після трьох невдалих спроб з’явиться підказка.</div></div>');
   const cv = $('cv'), g = cv.getContext('2d'), stage = $('stage');
-  let size = 600, lv = 0, state = 'card', tries = 0, hintOn = false;
+  let size = 600, lv = 0, state = 'card', tries = 0, hintOn = false, lastTap = null, acc = 0, replayAt = 0, repStart = 0;
   P.say = t => { $('msg').textContent = t; };
   function resize() {
     const css = Math.max(240, Math.min(innerWidth - 24, innerHeight - (innerWidth < 600 ? 250 : 190), 760)), dpr = Math.min(devicePixelRatio || 1, 2);
@@ -26,16 +28,17 @@ function Proto(P) {
   addEventListener('resize', resize); resize();
   P.levels.forEach((L, k) => { const b = document.createElement('button'); b.className = 'lv'; b.textContent = k + 1; b.title = L.name; b.onclick = () => setLevel(k); $('lvs').appendChild(b); });
   function setLevel(i) {
-    lv = i; tries = 0; hintOn = false; $('hint').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
+    lv = i; tries = 0; hintOn = false; replayAt = 0; $('hint').style.display = 'none'; $('replay').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
     document.querySelectorAll('.lv').forEach((b, k) => b.classList.toggle('cur', k === i));
     $('lvname').textContent = (i + 1) + '. ' + L.name; $('cnum').textContent = 'РІВЕНЬ ' + (i + 1) + ' З ' + P.levels.length;
     $('cname').textContent = L.name; $('ctext').textContent = L.text; $('card').classList.add('on'); $('next').style.display = 'none'; state = 'card'; P.say('');
   }
   function begin() { if (state !== 'card') return; $('card').classList.remove('on'); state = 'idle'; P.say(P.idleText || 'Торкніться поля.'); }
-  function reset() { if (state === 'card') return; P.build(P.L); state = 'idle'; $('next').style.display = 'none'; P.say(P.idleText || 'Торкніться поля.'); }
+  function reset() { if (state === 'card') return; P.build(P.L); state = 'idle'; replayAt = 0; $('next').style.display = 'none'; $('replay').style.display = 'none'; P.say(P.idleText || 'Торкніться поля.'); }
   function finish(v) {
+    if (state === 'replay') { state = 'win'; return; }
     state = v > 0 ? 'win' : 'lost';
-    if (v > 0) { $('hint').style.display = 'none'; P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
+    if (v > 0) { $('hint').style.display = 'none'; if (P.slowmo && state !== 'replay') { $('replay').style.display = 'inline-block'; replayAt = performance.now() + 900; } P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
     else { P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.'); if (tries >= 3 && P.L.best && !hintOn) $('hint').style.display = 'inline-block'; }
   }
   function cell(e) { const r = stage.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * P.G), Math.floor((e.clientY - r.top) / r.height * P.G)]; }
@@ -44,18 +47,32 @@ function Proto(P) {
   stage.addEventListener('pointerleave', () => { P.hover = null; });
   stage.addEventListener('pointerup', e => {
     if (e.target.closest('#card')) return;
-    if (state === 'lost') { reset(); return; }
+    if (state === 'lost') { reset(); return; } if (state === 'replay') return;
     if (state !== 'idle') return;
     const [x, y] = cell(e); if (x < 0 || y < 0 || x >= P.G || y >= P.G) return;
-    if (P.tap(x, y) === false) return; tries++; state = 'run';
+    if (P.tap(x, y) === false) return; lastTap = [x, y]; tries++; state = 'run';
   });
+  // the slow-motion replay: rebuild, touch the same cell, and step at a fraction of the speed
+  function replay() { if (!lastTap || state === 'run' || state === 'card') return; replayAt = 0; P.build(P.L); P.tap(lastTap[0], lastTap[1]); P.say('Повтор, уповільнено.'); state = 'replay'; acc = 0; repStart = performance.now(); }
+  function skipReplay() { let n = 0; while (state === 'replay' && n++ < 200000) { P.step(); if (P.verdict()) finish(1); } P.say((P.winText ? P.winText() : 'Вийшло.')); }
+  $('replay').onclick = replay;
+  stage.addEventListener('pointerdown', e => { if (state === 'replay' && !e.target.closest('#card')) skipReplay(); });
   $('hint').onclick = () => { hintOn = true; $('hint').style.display = 'none'; reset(); P.say('Спробуйте там, де пульсує коло.'); };
   $('again').onclick = reset; $('cgo').onclick = begin; $('next').onclick = () => setLevel(lv < P.levels.length - 1 ? lv + 1 : 0);
   addEventListener('keydown', e => { if (e.repeat) return; if (state === 'card' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); begin(); } else if (e.code === 'KeyR') reset(); else if (e.code === 'KeyN' && state === 'win') $('next').onclick(); });
   function frame(now) {
     if (state === 'run') { for (let k = 0; k < (P.speed || 1) && state === 'run'; k++) { P.step(); const v = P.verdict(); if (v) finish(v); } }
+    else if (state === 'replay') { acc += (P.speed || 1) * P.slowmo; P.slow = (now - repStart) / 1000; while (acc >= 1 && state === 'replay') { acc--; P.step(); if (P.verdict()) finish(1); } if (state === 'win') P.say(P.winText ? P.winText() : 'Вийшло.'); }
+    else if (state === 'win' && replayAt && now > replayAt) replay();
     else if ((state === 'win' || state === 'lost') && P.after) P.after();
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, size, size); P.state = state; P.draw(g, size / P.G, now, size);
+    if (state === 'replay') { // the slow-motion frame: letterbox bars, a soft vignette and a label
+      const u = size / 600, bar = Math.min(1, (now - repStart) / 400) * 20 * u; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
+      const vg = g.createRadialGradient(size / 2, size / 2, size * 0.35, size / 2, size / 2, size * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)'); g.fillStyle = vg; g.fillRect(0, 0, size, size);
+      g.fillStyle = '#000'; g.fillRect(0, 0, size, bar); g.fillRect(0, size - bar, size, bar);
+      g.fillStyle = 'rgba(255,255,255,.85)'; g.font = '600 ' + Math.round(12 * u) + 'px system-ui,sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('ПОВТОР  ×' + (Number.isInteger(1 / P.slowmo) ? '1/' + (1 / P.slowmo) : String(P.slowmo).replace('.', ',')), 16 * u, bar / 2);
+      if ((now / 500 | 0) % 2) { g.fillStyle = '#ff4d4d'; g.beginPath(); g.arc(size - 22 * u, bar / 2, 5 * u, 0, 7); g.fill(); }
+      g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.6)'; g.fillText('дотик пропускає', size - 34 * u, bar / 2); g.restore(); }
     if (hintOn && state === 'idle') { // the hint: a slow pulsing ring on a spot that is known to win
       const K = size / P.G, b = P.L.best, ph = now / 900 % 1; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
       g.lineWidth = Math.max(2, K * 0.35); g.strokeStyle = 'rgba(255,255,255,' + (0.9 * (1 - ph)) + ')'; g.beginPath(); g.arc((b[0] + 0.5) * K, (b[1] + 0.5) * K, (1.5 + ph * 4) * K, 0, 7); g.stroke();
@@ -65,8 +82,8 @@ function Proto(P) {
   // Test hook: jump to a level, tap a cell, run to the end without drawing.
   window.__p = {
     level: i => { setLevel(i); begin(); },
-    tap: (x, y) => { reset(); if (P.tap(x, y) === false) return 'refused'; tries++; state = 'run'; let n = 0; while (state === 'run' && n++ < 200000) { P.step(); const v = P.verdict(); if (v) finish(v); } return state; },
-    state: () => state, P, hint: () => hintOn
+    tap: (x, y) => { reset(); if (P.tap(x, y) === false) return 'refused'; lastTap = [x, y]; tries++; state = 'run'; let n = 0; while (state === 'run' && n++ < 200000) { P.step(); const v = P.verdict(); if (v) finish(v); } return state; },
+    state: () => state, P, hint: () => hintOn, replay, skipReplay
   };
   setLevel(0); requestAnimationFrame(frame);
 }

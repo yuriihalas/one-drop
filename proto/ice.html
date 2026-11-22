@@ -6,37 +6,45 @@
 // LAW: a crystal grows where cold water gives up its cold. Cells next to ice collect cold from the water
 // around them and freeze when they have collected enough; the rest of the water only passes cold along.
 // A tip that sticks out reaches fresh cold water first, so it outruns the flat sides: six arms on a hex grid.
+// This is Reiter's model of snow crystals, with water in place of vapour. In a current, fresh cold water keeps
+// arriving from upstream, so arms that face the current are fed first and outgrow the ones that trail behind.
 const W = 83, HH = 96, N = W * HH, ALPHA = 1;
 const WATER = 0, ROCK = 1, SPRING = 2;
-const kind = new Uint8Array(N), ice = new Uint8Array(N), born = new Uint16Array(N), nb = new Int32Array(N * 6);
+const edge = new Uint8Array(N), kind = new Uint8Array(N), ice = new Uint8Array(N), born = new Uint16Array(N), nb = new Int32Array(N * 6), parent = new Int32Array(N);
 let s = new Float32Array(N), u = new Float32Array(N), u2 = new Float32Array(N), stepN = 0, iceN = 0, LVI = null, fresh = [];
-for (let y = 0; y < HH; y++) for (let x = 0; x < W; x++) { const i = y * W + x, o = y & 1, c = [[x - 1, y], [x + 1, y], [x - 1 + o, y - 1], [x + o, y - 1], [x - 1 + o, y + 1], [x + o, y + 1]];
+for (let y = 0; y < HH; y++) for (let x = 0; x < W; x++) { const i = y * W + x, o = y & 1; edge[i] = x === 0 || y === 0 || x === W - 1 || y === HH - 1 ? 1 : 0; const c = [[x - 1, y], [x + 1, y], [x - 1 + o, y - 1], [x + o, y - 1], [x - 1 + o, y + 1], [x + o, y + 1]];
   for (let k = 0; k < 6; k++) { const [X, Y] = c[k]; nb[i * 6 + k] = X < 0 || Y < 0 || X >= W || Y >= HH ? -1 : Y * W + X; } }
-function iceBuild(L) { LVI = L; kind.fill(WATER); ice.fill(0); born.fill(0); stepN = 0; iceN = 0; fresh = [];
+function iceBuild(L) { LVI = L; kind.fill(WATER); ice.fill(0); born.fill(0); parent.fill(-1); stepN = 0; iceN = 0; fresh = [];
   for (const c of L.rocks || []) blob(c, ROCK); for (const c of L.springs || []) blob(c, SPRING);
   for (let y = 0; y < HH; y++) for (let x = 0; x < W; x++) { const i = y * W + x; let b = L.cold;
     for (const z of L.zones || []) { const d = Math.hypot((x - z[0]) / z[2], (y - z[1]) / z[3]); if (d < 1) b += (z[4] - L.cold) * Math.min(1, (1 - d) * 3); }
     s[i] = kind[i] === WATER ? b : 0; } }
 function blob(c, k) { for (let y = 0; y < HH; y++) for (let x = 0; x < W; x++) { const dx = (x + (y & 1) * 0.5 - c[0]) * 1.1547, dy = y - c[1]; if (dx * dx + dy * dy <= c[2] * c[2]) kind[y * W + x] = k; } }
-function freeze(i) { if (kind[i] !== WATER || ice[i]) return; ice[i] = 1; born[i] = stepN; iceN++; fresh.push(i); }
+function freeze(i) { if (kind[i] !== WATER || ice[i]) return; ice[i] = 1; parent[i] = i; born[i] = stepN; iceN++; fresh.push(i); }
 function iceSeed(x, y) { const i = y * W + x; freeze(i); s[i] = 1; }
 function iceStep() { stepN++;
   for (let i = 0; i < N; i++) { let r = ice[i]; if (!r) for (let k = 0; k < 6; k++) { const j = nb[i * 6 + k]; if (j >= 0 && ice[j]) { r = 1; break; } } u[i] = r || kind[i] !== WATER ? 0 : s[i]; if (r) u2[i] = -1; else u2[i] = 0; }
+  const fl = LVI.flow, vx = fl ? fl[0] : 0, vy = fl ? fl[1] : 0, open = fl ? LVI.cold : -1, at = (i, k, c) => { const j = nb[i * 6 + k]; return j < 0 ? (open < 0 ? c : open) : kind[j] === ROCK ? c : kind[j] === SPRING ? 0 : u[j]; };
   for (let i = 0; i < N; i++) { if (kind[i] !== WATER) { continue; } const rec = u2[i] < 0, c = u[i]; let sum = 0;
-    for (let k = 0; k < 6; k++) { const j = nb[i * 6 + k]; sum += j < 0 || kind[j] === ROCK ? c : kind[j] === SPRING ? 0 : u[j]; }
-    const d = c + ALPHA / 12 * (sum - 6 * c); if (rec) { s[i] += d; if (!ice[i] && s[i] >= 1) { ice[i] = 2; } } else s[i] = d; }
-  for (let i = 0; i < N; i++) if (ice[i] === 2) { ice[i] = 1; born[i] = stepN; iceN++; fresh.push(i); } }
+    for (let k = 0; k < 6; k++) sum += at(i, k, c);
+    let d = c + ALPHA / 12 * (sum - 6 * c);
+    if (fl && !rec) d -= vx * (vx > 0 ? c - at(i, 0, c) : at(i, 1, c) - c) + vy * (vy > 0 ? c - (at(i, 2, c) + at(i, 3, c)) / 2 : (at(i, 4, c) + at(i, 5, c)) / 2 - c); /* the current carries the cold of the water downstream */ if (rec) { s[i] += d; if (!ice[i] && s[i] >= 1 && !edge[i]) { ice[i] = 2; } } /* the outermost ring of cells is open water that never freezes */ else s[i] = d; }
+  for (let i = 0; i < N; i++) if (ice[i] === 2) { let p = -1; for (let k = 0; k < 6; k++) { const j = nb[i * 6 + k]; if (j >= 0 && ice[j] === 1 && (p < 0 || born[j] < born[p])) p = j; } parent[i] = p; ice[i] = 1; born[i] = stepN; iceN++; fresh.push(i); } }
 function near(p, r) { for (let y = Math.max(0, p[1] - r); y <= Math.min(HH - 1, p[1] + r); y++) for (let x = Math.max(0, p[0] - r); x <= Math.min(W - 1, p[0] + r); x++) { const dx = (x + (y & 1) * 0.5 - p[0]) * 1.1547, dy = y - p[1]; if (dx * dx + dy * dy <= r * r && ice[y * W + x]) return true; } return false; }
 function iceVerdict() { for (const d of LVI.ducks || []) if (near(d, 3)) return -1; if (LVI.posts.every(p => near(p, 3))) return 1; return stepN >= LVI.dawn ? -1 : 0; }
-const LEVELS = [{"name":"Кристал","text":"Крижаний кристал росте шістьма променями, а від них відходять бічні гілки. Промінь росте, поки не настане світанок. Торкніться води так, щоб лід дійшов до обох ліхтарів.","cold":0.4,"posts":[[22,48],[60,48]],"dawn":1000,"best":[46,48]},
-  {"name":"Качки","text":"Качкам потрібна відкрита вода. Жоден промінь не має пройти крізь їхнє плесо. Наведіть курсор: шість рисок показують, куди піде кристал.","cold":0.4,"posts":[[18,56],[62,56]],"ducks":[[52,32],[25,80]],"dawn":760,"best":[46,58]},
-  {"name":"Тепла течія","text":"Вода не всюди однакова. У світлій, холодній воді промінь росте вдвічі швидше; у темній, теплій ледве повзе. Ніч коротка: ведіть промені холодною водою.","cold":0.4,"posts":[[12,30],[70,66]],"zones":[[30,50,9,22,0.2],[60,30,26,8,0.56]],"ducks":[[34,84]],"dawn":900,"best":[60,30]},
-  {"name":"Скелі й джерело","text":"Скеля зупиняє промінь. Тепле джерело забирає холод довкола себе, і промінь біля нього хиріє. Три ліхтарі, одна качка, коротка ніч.","cold":0.42,"posts":[[64,50],[27,24],[26,78]],"rocks":[[52,36,5],[14,52,5],[56,70,6]],"springs":[[46,22,4]],"ducks":[[62,24]],"dawn":720,"best":[46,50]}];
+const LEVELS = [
+  {"name": "Кристал", "text": "Крижаний кристал росте шістьма променями, а від них відходять бічні гілки. Промінь росте, поки не настане світанок. Торкніться води так, щоб лід дійшов до обох ліхтарів.", "cold": 0.4, "posts": [[22, 48], [60, 48]], "dawn": 1000, "best": [46, 48]},
+  {"name": "Качки", "text": "Качкам потрібна відкрита вода. Жоден промінь не має пройти крізь їхнє плесо. Наведіть курсор: шість рисок показують, куди піде кристал.", "cold": 0.4, "posts": [[18, 56], [62, 56]], "ducks": [[52, 32], [25, 80]], "dawn": 760, "best": [46, 58]},
+  {"name": "Тепла течія", "text": "Вода не всюди однакова. У світлій, холодній воді промінь росте вдвічі швидше; у темній, теплій ледве повзе. Ніч коротка: ведіть промені холодною водою.", "cold": 0.4, "posts": [[12, 30], [70, 66]], "zones": [[30, 50, 9, 22, 0.2], [60, 30, 26, 8, 0.56]], "ducks": [[34, 84]], "dawn": 900, "best": [60, 30]},
+  {"name": "Скелі й джерело", "text": "Скеля зупиняє промінь. Тепле джерело забирає холод довкола себе, і промінь біля нього хиріє. Три ліхтарі, одна качка, коротка ніч.", "cold": 0.42, "posts": [[64, 50], [27, 24], [26, 78]], "rocks": [[52, 36, 5], [14, 52, 5], [56, 70, 6]], "springs": [[46, 22, 4]], "ducks": [[62, 24]], "dawn": 720, "best": [46, 50]},
+  {"name": "Течія", "text": "Тепер вода тече зліва направо й несе свіжий холод. Промені, що дивляться проти течії, отримують його першими й ростуть швидко; ті, що за течією, ледве рухаються. Смужки на воді показують течію.", "cold": 0.4, "flow": [0.02, 0], "posts": [[8, 48], [20, 20]], "ducks": [[62, 48]], "dawn": 700, "best": [16, 30]},
+  {"name": "Проти течії", "text": "Течія сильніша, качок двоє. Обидва ліхтарі лежать проти течії, і кристал має дотягнутися до них раніше, ніж за течією дійде до качки.", "cold": 0.4, "flow": [0.025, 0], "posts": [[6, 30], [10, 74]], "ducks": [[52, 52], [70, 20]], "dawn": 700, "best": [19, 54]},
+  {"name": "Острівці", "text": "Скелі розбивають промені, а качки чекають зверху й знизу. Обидва ліхтарі на одній лінії; знайдіть місце, звідки два промені пройдуть між скелями.", "cold": 0.42, "posts": [[14, 48], [70, 48]], "rocks": [[30, 40, 5], [30, 58, 5], [56, 46, 4]], "ducks": [[42, 20], [42, 80]], "dawn": 800, "best": [46, 50]}];
 // ---- drawing: water tinted by its cold is painted once per level; ice is added to its own layer cell by cell
 const G = 96, SX = 1.1547, cold0 = new Float32Array(N);
 const low = document.createElement('canvas'); low.width = W; low.height = HH; const lg = low.getContext('2d'), limg = lg.createImageData(W, HH);
 const mask = document.createElement('canvas'); mask.width = W; mask.height = HH; const mg = mask.getContext('2d'), mimg = mg.createImageData(W, HH);
-let ground = null, iceC = null, icg = null, key = '', drawn = 0, sparks = [], steam = [], lastNow = 0, lostBy = '', winT = 0;
+let ground = null, iceC = null, icg = null, veinC = null, vcg = null, flowT = 0, key = '', drawn = 0, sparks = [], steam = [], lastNow = 0, lostBy = '', winT = 0;
 const hash = i => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; h = (h * 2246822519) >>> 0; h ^= h >>> 13; return (h >>> 0) / 4294967296; };
 const px = (i, K) => { const x = i % W, y = (i - x) / W; return [(x + (y & 1) * 0.5 + 0.5) * SX * K, (y + 0.5) * K]; };
 const at = (p, K) => [(p[0] + 0.5) * SX * K, (p[1] + 0.5) * K];
@@ -61,16 +69,15 @@ function paintGround(size, K) {
     const sn = g.createRadialGradient(x - rad * 0.3, y - rad * 0.4, 0, x - rad * 0.3, y - rad * 0.4, rad * 0.85); sn.addColorStop(0, 'rgba(250,253,255,.97)'); sn.addColorStop(0.7, 'rgba(226,238,250,.9)'); sn.addColorStop(1, 'rgba(226,238,250,0)'); g.fillStyle = sn; g.fillRect(x - rad * 1.3, y - rad * 1.3, rad * 2.6, rad * 2.6); g.restore(); }
   return c;
 }
-function addIce(K) { // new cells go onto the ice layer once; older cells are never redrawn
-  for (; drawn < fresh.length; drawn++) { const i = fresh[drawn], [x, y] = px(i, K), t = hash(i), v = 205 + 50 * t | 0;
-    icg.fillStyle = 'rgba(' + (v - 26) + ',' + (v - 6) + ',255,.94)'; icg.beginPath(); hex(icg, x, y, K * 0.64); icg.fill();
-    icg.fillStyle = 'rgba(255,255,255,' + (0.25 + 0.5 * t) + ')'; icg.beginPath(); icg.moveTo(x, y - K * 0.62); icg.lineTo(x + K * 0.54, y - K * 0.3); icg.lineTo(x, y); icg.closePath(); icg.fill();
-    icg.fillStyle = 'rgba(60,110,170,.28)'; icg.beginPath(); icg.moveTo(x, y + K * 0.62); icg.lineTo(x - K * 0.54, y + K * 0.3); icg.lineTo(x, y); icg.closePath(); icg.fill();
+function addIce(K) { // new cells go onto the ice layers once: a smooth body, and a vein from each cell to the one it grew from
+  for (; drawn < fresh.length; drawn++) { const i = fresh[drawn], [x, y] = px(i, K), t = hash(i);
+    icg.fillStyle = 'rgb(' + (120 + 30 * t | 0) + ',' + (170 + 25 * t | 0) + ',' + (225 + 20 * t | 0) + ')'; icg.beginPath(); icg.arc(x, y, K * 0.8, 0, 7); icg.fill();
+    const p = parent[i]; if (p >= 0 && p !== i) { const [a, b] = px(p, K), w = K * (0.08 + 0.34 * Math.exp(-born[i] / 170)); vcg.lineCap = 'round'; vcg.strokeStyle = 'rgba(255,255,255,' + (0.55 + 0.4 * Math.exp(-born[i] / 300)) + ')'; vcg.lineWidth = w; vcg.beginPath(); vcg.moveTo(a, b); vcg.lineTo(x, y); vcg.stroke(); }
     if (sparks.length < 260) sparks.push({ i, a: 0 }); }
 }
 function star(g, x, y, r, a) { g.fillStyle = 'rgba(255,255,255,' + a + ')'; g.beginPath(); g.moveTo(x, y - r); g.quadraticCurveTo(x, y, x + r, y); g.quadraticCurveTo(x, y, x, y + r); g.quadraticCurveTo(x, y, x - r, y); g.quadraticCurveTo(x, y, x, y - r); g.fill(); }
 Proto({
-  G, levels: LEVELS, speed: 3, idleText: 'Торкніться води: там народиться кристал.',
+  G, levels: LEVELS, speed: 3, slowmo: 0.3, idleText: 'Торкніться води: там народиться кристал.',
   build(L) { iceBuild(L); cold0.set(s); key = ''; sparks = []; steam = []; lostBy = ''; },
   tap(x, y) { const c = Math.max(0, Math.min(W - 1, Math.round(x / SX - (y & 1) * 0.5))), i = y * W + c;
     if (kind[i] !== WATER) { this.say(kind[i] === ROCK ? 'На камені кристал не виросте. Торкніться води.' : 'У теплому джерелі лід не візьметься. Торкніться холодної води.'); return false; }
@@ -81,9 +88,12 @@ Proto({
   winText: () => 'Лід дійшов до всіх ліхтарів' + ((LVI.ducks || []).length ? ', качки на воді.' : '.'),
   failText: () => lostBy === 'duck' ? 'Лід скував плесо качки.' : 'Світає, а лід дійшов не до всіх ліхтарів: промені пішли не туди або вода була затепла.',
   draw(g, K, now, size) {
-    const k2 = size + ':' + LEVELS.indexOf(LVI); if (k2 !== key) { ground = paintGround(size, K); iceC = document.createElement('canvas'); iceC.width = iceC.height = size; icg = iceC.getContext('2d'); drawn = 0; key = k2; }
-    if (drawn > fresh.length) { icg.clearRect(0, 0, size, size); drawn = 0; }
+    const k2 = size + ':' + LEVELS.indexOf(LVI); if (k2 !== key) { ground = paintGround(size, K); veinC = document.createElement('canvas'); veinC.width = veinC.height = size; vcg = veinC.getContext('2d'); iceC = document.createElement('canvas'); iceC.width = iceC.height = size; icg = iceC.getContext('2d'); drawn = 0; key = k2; }
+    if (drawn > fresh.length) { icg.clearRect(0, 0, size, size); vcg.clearRect(0, 0, size, size); drawn = 0; }
     const dt = Math.min(0.25, (now - lastNow) / 1000); lastNow = now; g.drawImage(ground, 0, 0); addIce(K);
+    // the current: faint streaks drifting downstream
+    if (LVI.flow) { flowT += dt; const r = rng(3), f = LVI.flow, sp = Math.hypot(f[0], f[1]) * 260; g.lineCap = 'round'; g.lineWidth = Math.max(1, K * 0.14);
+      for (let k = 0; k < 80; k++) { const x0 = r() * size, y0 = r() * size, ph = (r() + flowT * 0.25) % 1, x = ((x0 + flowT * sp * K * f[0] / Math.hypot(f[0], f[1])) % size + size) % size, y = y0, l = K * (2 + r() * 3); g.strokeStyle = 'rgba(200,230,255,' + 0.16 * Math.sin(ph * Math.PI) + ')'; g.beginPath(); g.moveTo(x - l, y); g.lineTo(x, y); g.stroke(); } }
     // steam over the warm springs
     for (const sp of LVI.springs || []) if (steam.length < 60 && Math.random() < 0.25) steam.push({ x: sp[0] + (Math.random() - 0.5) * sp[2] * 1.4, y: sp[1] + (Math.random() - 0.5) * sp[2], a: 0 });
     for (const m of steam) { m.a += dt; m.y -= dt * 1.6; const l = m.a / 3; if (l < 1) { const [x, y] = at([m.x, m.y], K); g.fillStyle = 'rgba(210,235,230,' + 0.1 * Math.sin(l * Math.PI) + ')'; g.beginPath(); g.arc(x, y, (1 + l * 2.5) * K, 0, 7); g.fill(); } } steam = steam.filter(m => m.a < 3);
@@ -91,9 +101,10 @@ Proto({
     if (this.hover && this.state === 'idle') { const hx = (this.hover[0] + 0.5) * K, hy = (this.hover[1] + 0.5) * K; g.lineWidth = Math.max(1, K * 0.22); g.lineCap = 'round';
       for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3, ex = hx + Math.cos(a) * 16 * K, ey = hy + Math.sin(a) * 16 * K, gr = g.createLinearGradient(hx, hy, ex, ey); gr.addColorStop(0, 'rgba(220,240,255,.75)'); gr.addColorStop(1, 'rgba(220,240,255,0)'); g.strokeStyle = gr; g.beginPath(); g.moveTo(hx, hy); g.lineTo(ex, ey); g.stroke(); } }
     // glow: the ice mask at grid size, blurred and added as light; then the ice itself with a shadow on the water
-    if (fresh.length) { const d = mimg.data; for (let i = 0; i < N; i++) { d[i * 4] = 150; d[i * 4 + 1] = 205; d[i * 4 + 2] = 255; d[i * 4 + 3] = ice[i] ? 70 : 0; } mg.putImageData(mimg, 0, 0);
+    if (fresh.length) { const d = mimg.data; for (let i = 0; i < N; i++) { d[i * 4] = 150; d[i * 4 + 1] = 205; d[i * 4 + 2] = 255; d[i * 4 + 3] = ice[i] ? 34 : 0; } mg.putImageData(mimg, 0, 0);
       g.save(); g.globalCompositeOperation = 'lighter'; g.filter = 'blur(' + (K * 3).toFixed(1) + 'px)'; g.drawImage(mask, 0.25 * SX * K, 0, W * SX * K, size); g.restore(); g.filter = 'none';
-      g.save(); g.shadowColor = 'rgba(0,10,24,.6)'; g.shadowBlur = K * 1.2; g.shadowOffsetY = K * 0.5; g.drawImage(iceC, 0, 0); g.restore(); }
+      g.save(); g.shadowColor = 'rgba(0,10,30,.75)'; g.shadowBlur = K * 1.4; g.shadowOffsetY = K * 0.7; g.globalAlpha = 0.5; g.drawImage(iceC, 0, 0); g.restore();
+      g.save(); g.shadowColor = 'rgba(190,230,255,.9)'; g.shadowBlur = K * 0.8; g.drawImage(veinC, 0, 0); g.restore(); }
     // fresh ice flashes as it sets; old ice keeps a slow random glitter
     g.save(); g.globalCompositeOperation = 'lighter';
     for (const sp of sparks) { sp.a += dt; const l = sp.a / 0.7; if (l >= 1) continue; const [x, y] = px(sp.i, K), rad = (1.5 - l) * 1.6 * K, gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, 'rgba(255,255,255,' + 0.9 * (1 - l) + ')'); gr.addColorStop(1, 'rgba(140,200,255,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); }
@@ -101,7 +112,12 @@ Proto({
     for (let k = 0; k < 26 && fresh.length; k++) { const t = now / 1400 + k * 0.37, ph = t % 1, i = fresh[Math.floor(hash(k * 977 + Math.floor(t) * 131) * fresh.length)], [x, y] = px(i, K); star(g, x, y, (0.6 + 2.2 * Math.sin(ph * Math.PI)) * K, 0.85 * Math.sin(ph * Math.PI)); }
     // on a win a band of light runs through the crystal in the order it froze, from the seed to the tips
     if (this.state === 'win') { winT += dt; const n = fresh.length, head = (winT * 0.55 % 1.5) * n; for (let k = Math.max(0, Math.floor(head - n * 0.07)); k < Math.min(n, head); k++) { const [x, y] = px(fresh[k], K), rad = 1.5 * K, a2 = 0.5 * (1 - (head - k) / (n * 0.07)), gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, 'rgba(255,236,190,' + a2 + ')'); gr.addColorStop(1, 'rgba(255,200,120,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); } } else winT = 0;
+    // the finale: the sun comes up and its light splits into colours in the ice
+    if (this.state === 'win' && fresh.length) for (let k = 0; k < 34; k++) { const t = now / 1700 + k * 0.29, ph = t % 1, i = fresh[Math.floor(hash(k * 613 + Math.floor(t) * 71) * fresh.length)], [x, y] = px(i, K), a = Math.sin(ph * Math.PI) * Math.min(1, winT), ang = (k * 1.1 + now / 4000) % 6.283, l = K * (2 + 3 * hash(k));
+      const rg = g.createLinearGradient(x - Math.cos(ang) * l, y - Math.sin(ang) * l, x + Math.cos(ang) * l, y + Math.sin(ang) * l); ['255,60,60', '255,170,40', '255,255,80', '80,255,120', '70,170,255', '170,90,255'].forEach((c, q) => rg.addColorStop(q / 5, 'rgba(' + c + ',' + 0.55 * a + ')'));
+      g.strokeStyle = rg; g.lineWidth = Math.max(1, K * 0.35); g.beginPath(); g.moveTo(x - Math.cos(ang) * l, y - Math.sin(ang) * l); g.lineTo(x + Math.cos(ang) * l, y + Math.sin(ang) * l); g.stroke(); }
     g.restore();
+    if (this.state === 'win') { const a = Math.min(1, winT / 2.5), sg = g.createRadialGradient(size * 1.05, size * 0.95, 0, size * 1.05, size * 0.95, size * 1.1); sg.addColorStop(0, 'rgba(255,200,120,' + 0.5 * a + ')'); sg.addColorStop(0.5, 'rgba(255,150,120,' + 0.16 * a + ')'); sg.addColorStop(1, 'rgba(255,150,120,0)'); g.fillStyle = sg; g.fillRect(0, 0, size, size); }
     // lanterns and ducks
     for (const p of LVI.posts) { const [x, y] = at(p, K); Art.lantern(g, x, y, K * 0.95, near(p, 3), now); }
     for (const d of LVI.ducks || []) { const [x, y] = at(d, K); Art.duck(g, x, y, K * 1.3, now, near(d, 3)); }
