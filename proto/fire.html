@@ -146,6 +146,7 @@ Proto({
   focus() { let n = 0, cx = 0, cy = 0; for (let i = 0; i < G * G; i++) if (st[i] === 1 && tm[i] > BURN[fuel[i]] * 0.75) { cx += i % G; cy += (i / G | 0); n++; } return n ? [cx / n, cy / n] : null; },
   hold() { return burning > 0; },
   winText: () => LVF.fires.length ? 'Усі ватри горять, хати цілі.' : 'Пожежа згасла без поживи, село ціле.',
+  score: () => { const hb = (LVF.huts || []).filter(h => st[h[1] * G + h[0]]).length; if (LVF.fires.length) return hb ? 0.15 : 0.9 * LVF.fires.filter(b => st[b[1] * G + b[0]]).length / LVF.fires.length; return 0.9 * (1 - hb / Math.max(1, (LVF.huts || []).length)); },
   failTitle: () => (LVF.huts || []).some(h => st[h[1] * G + h[0]]) ? 'Вогонь дійшов до хати' : 'Запалено не всі ватри',
   failText: () => (LVF.huts || []).some(h => st[h[1] * G + h[0]]) ? 'Вогонь дійшов до хати.' : 'Вогонь згас, а запалено не всі ватри: ' + ((LVF.hills || []).length ? 'схилом униз він не спустився.' : 'проти вітру й через воду він не пройшов.'),
   after() { },

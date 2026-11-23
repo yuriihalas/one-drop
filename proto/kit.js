@@ -14,6 +14,7 @@
 //   focus()  optional: the cell [x, y] the replay camera dives to (default: the touched cell)
 //   hold()   optional: true while the replay camera should stay close (it lets go after 12 s at most)
 //   P.shake  set it to shake the view by that many cells; it dies away by itself
+//   P.score  optional: after a miss, how close it came, 0..1; the attempt is left on the field as a dot of that warmth
 //   P.flash  set it (0..1) to flash the frame with light, P.flashCol its colour; it fades by itself
 //   sfx      optional sound: { tap(S), frame(S, dt, state), win(S), lose(S) }, S being Snd below; silent until the player turns sound on
 function Proto(P) {
@@ -22,9 +23,9 @@ function Proto(P) {
     '<div id="wrap"><div id="top"><a href="index.html">← Стихії</a><b id="lvname"></b><span id="lvs"></span></div>' +
     '<div id="stage"><canvas id="cv"></canvas><div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button class="go" id="cgo">Почати</button></div></div></div>' +
     '<div id="bar"><div id="msg"></div><button id="replay">Повтор</button><button id="hint">Підказка</button><button id="again">Ще раз</button><button id="next" class="go">Далі</button><button id="snd"></button></div>' +
-    '<div id="sub">Прототип. Один дотик на спробу. Після трьох невдалих спроб з’явиться підказка.</div></div>');
+    '<div id="sub">Прототип. Один дотик на спробу. Цятки — ваші попередні спроби: що тепліший колір, то ближче було. Після трьох невдалих спроб з’явиться підказка.</div></div>');
   const cv = $('cv'), g = cv.getContext('2d'), stage = $('stage');
-  let lostShown = 0, winShown = 0, cz = 1, cfx = 0, cfy = 0, lastNow = 0, size = 600, lv = 0, state = 'card', tries = 0, hintOn = false, lastTap = null, acc = 0, replayAt = 0, repStart = 0;
+  let marks = [], lostShown = 0, winShown = 0, cz = 1, cfx = 0, cfy = 0, lastNow = 0, size = 600, lv = 0, state = 'card', tries = 0, hintOn = false, lastTap = null, acc = 0, replayAt = 0, repStart = 0;
   P.say = t => { $('msg').textContent = t; };
   const sndLabel = () => { $('snd').textContent = Snd.on ? 'Звук увімкнено' : 'Звук вимкнено'; };
   try { Snd.on = localStorage.getItem('proto-sound') === '1'; } catch (e) { } sndLabel();
@@ -39,7 +40,7 @@ function Proto(P) {
   addEventListener('resize', resize); resize();
   P.levels.forEach((L, k) => { const b = document.createElement('button'); b.className = 'lv'; b.textContent = k + 1; b.title = L.name; b.onclick = () => setLevel(k); $('lvs').appendChild(b); });
   function setLevel(i) {
-    lv = i; tries = 0; hintOn = false; replayAt = 0; winShown = 0; cz = 1; P.zoom = 1; $('hint').style.display = 'none'; $('replay').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
+    lv = i; tries = 0; marks = []; hintOn = false; replayAt = 0; winShown = 0; cz = 1; P.zoom = 1; $('hint').style.display = 'none'; $('replay').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
     document.querySelectorAll('.lv').forEach((b, k) => b.classList.toggle('cur', k === i));
     $('lvname').textContent = (i + 1) + '. ' + L.name; $('cnum').textContent = 'РІВЕНЬ ' + (i + 1) + ' З ' + P.levels.length;
     $('cname').textContent = L.name; $('ctext').textContent = L.text; $('card').classList.add('on'); $('next').style.display = 'none'; state = 'card'; P.say('');
@@ -50,7 +51,7 @@ function Proto(P) {
     if (state === 'replay') { state = 'win'; winShown = performance.now(); sfx('win'); return; }
     state = v > 0 ? 'win' : 'lost';
     sfx(v > 0 ? 'win' : 'lose'); if (v > 0) { const lb = document.querySelectorAll('.lv')[lv]; if (lb) lb.classList.add('done'); /* won in this visit: the level button turns green */ $('hint').style.display = 'none'; if (P.slowmo && state !== 'replay') { $('replay').style.display = 'inline-block'; replayAt = performance.now() + 900; } P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
-    else { lostShown = performance.now(); P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.'); if (tries >= 3 && P.L.best && !hintOn) $('hint').style.display = 'inline-block'; }
+    else { lostShown = performance.now(); if (lastTap && P.score) marks.push({ x: lastTap[0], y: lastTap[1], s: Math.max(0, Math.min(1, P.score() || 0)) }); /* the attempt stays as a dot: the warmer, the closer it came */ P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.'); if (tries >= 3 && P.L.best && !hintOn) $('hint').style.display = 'inline-block'; }
   }
   function cell(e) { const r = stage.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * P.G), Math.floor((e.clientY - r.top) / r.height * P.G)]; }
   P.hover = null;
@@ -105,6 +106,10 @@ function Proto(P) {
       const bg = g.createLinearGradient(0, size * 0.68, 0, size); bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, 'rgba(0,0,0,' + 0.55 * a + ')'); g.fillStyle = bg; g.fillRect(0, size * 0.68, size, size * 0.32);
       g.globalAlpha = a; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 14 * u; g.fillStyle = '#fff'; let fs = 30 * u; g.font = '600 ' + Math.round(fs) + 'px system-ui,sans-serif'; while (g.measureText(t).width > size * 0.9 && fs > 14 * u) { fs -= 2 * u; g.font = '600 ' + Math.round(fs) + 'px system-ui,sans-serif'; }
       g.fillText(t, size / 2, size * 0.86 + (1 - a) * 10 * u); g.font = Math.round(15 * u) + 'px system-ui,sans-serif'; g.fillStyle = '#ffe2b0'; g.fillText(tries === 1 ? 'з першої спроби' : 'спроба № ' + tries, size / 2, size * 0.925 + (1 - a) * 10 * u); g.restore(); }
+    if (marks.length && (state === 'idle' || state === 'lost')) { // earlier attempts on this level, as in the water game: cool blue far off, warm orange close
+      const K = size / P.G; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
+      for (const m of marks) { const c = 'rgb(' + Math.round(90 + 165 * m.s) + ',' + Math.round(150 + 40 * Math.sin(m.s * 3.14)) + ',' + Math.round(240 - 200 * m.s) + ')'; const px = (m.x + 0.5) * K, py = (m.y + 0.5) * K, r = Math.max(4, K * 1.1); g.fillStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.arc(px, py, r * 1.35, 0, 7); g.fill(); g.fillStyle = c; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = Math.max(1, r * 0.22); g.stroke(); }
+      g.restore(); }
     if (hintOn && state === 'idle') { // the hint: a slow pulsing ring on a spot that is known to win
       const K = size / P.G, b = P.L.best, ph = now / 900 % 1; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
       g.lineWidth = Math.max(2, K * 0.35); g.strokeStyle = 'rgba(255,255,255,' + (0.9 * (1 - ph)) + ')'; g.beginPath(); g.arc((b[0] + 0.5) * K, (b[1] + 0.5) * K, (1.5 + ph * 4) * K, 0, 7); g.stroke();
@@ -114,7 +119,7 @@ function Proto(P) {
   window.__p = {
     level: i => { setLevel(i); begin(); },
     tap: (x, y) => { reset(); if (P.tap(x, y) === false) return 'refused'; lastTap = [x, y]; tries++; state = 'run'; let n = 0; while (state === 'run' && n++ < 200000) { P.step(); const v = P.verdict(); if (v) finish(v); } return state; },
-    state: () => state, P, hint: () => hintOn, replay, skipReplay
+    state: () => state, P, hint: () => hintOn, replay, skipReplay, marks: () => marks
   };
   setLevel(0); requestAnimationFrame(frame);
 }

@@ -79,6 +79,7 @@ Proto({
   tap(x, y) { if (wall[y * G + x]) { this.say('Це стіна. Поставте камертон на підлогу.'); return false; } airTap(x, y); this.say('Камертон гуде, кімната набирає звук…'); },
   step: airStep, verdict: airVerdict,
   winText: () => 'Кімната підхопила ноту, дзвіночки дзвенять. Пил ліг туди, де повітря стоїть.',
+  score: () => catWoke() ? 0.25 : 0.95 * Math.min(1, ...peak.map(v => v / LVA.need)),
   failTitle: () => catWoke() ? 'Кіт прокинувся' : 'Дзвіночки ледве ворухнулись',
   failText: () => catWoke() ? 'Кіт прокинувся: там, де він спить, повітря гойдалося надто сильно. Камертон стояв надто вдало для всієї кімнати.' : 'Дзвіночки ледве ворухнулись (' + peak.map(v => Math.min(99, Math.round(v / LVA.need * 100)) + '%').join(', ') + '). Камертон стояв на тихій лінії або не в тій кімнаті.',
   // sound: the fork hums a pure tone; as the room picks the note up the hum swells; the bells ring when it sings

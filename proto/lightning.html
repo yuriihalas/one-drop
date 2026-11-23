@@ -16,7 +16,7 @@ const G = 96, BASE = 13, SUB = 4, NS = G * SUB, MAXROD = 12, ROOFROD = 4;
 const GROUND = 0, WATER = 1, ROD = 2, MAST = 3, HOUSE = 4, TREE = 5, BOAT = 6, HAY = 7;
 const isSafe = k => k <= MAST || k === TREE; // a struck tree splits or smoulders, but it burns no one's home
 const sky = new Float32Array(NS), tk = new Uint8Array(NS), tid = new Int16Array(NS), gnd = new Float32Array(NS);
-let LVL = null, rod = null, fails = [], catches = [], shows = [], qi = 0, qt = 0;
+let base = 0, total = 0, LVL = null, rod = null, fails = [], catches = [], shows = [], qi = 0, qt = 0;
 const Rof = I => 10 * Math.pow(I, 0.65), sx = s => (s + 0.5) / SUB;
 function groundAt(x) { let y = G - 2; for (const h of LVL.hills || []) y -= h[1] * Math.exp(-((x - h[0]) / h[2]) * ((x - h[0]) / h[2])); return y; }
 function baseAt(x) { const s = Math.max(0, Math.min(NS - 1, Math.floor(x * SUB))); return gnd[s]; }
@@ -29,7 +29,7 @@ function shapes(L) {
   (L.boats || []).forEach((cx, n) => { const b = baseAt(cx); raise(cx - 4, cx + 4, () => b - 0.9, BOAT, n); raise(cx + 0.1, cx + 0.5, () => b - 7, BOAT, n); });
   (L.masts || []).forEach((m, n) => { const b = baseAt(m[0]); raise(m[0] - 0.3, m[0] + 0.3, () => b - m[1], MAST, n); }); }
 function liBuild(L) { LVL = L; rod = null; fails = []; catches = []; shows = []; qi = 0; qt = 0;
-  for (let s = 0; s < NS; s++) { const x = sx(s); gnd[s] = sky[s] = groundAt(x); tk[s] = (L.lakes || []).some(l => x >= l[0] && x <= l[1]) ? WATER : GROUND; tid[s] = -1; } shapes(L); }
+  for (let s = 0; s < NS; s++) { const x = sx(s); gnd[s] = sky[s] = groundAt(x); tk[s] = (L.lakes || []).some(l => x >= l[0] && x <= l[1]) ? WATER : GROUND; tid[s] = -1; } shapes(L); base = storm().filter(r => !isSafe(r.k)).length; } // how many strokes would do harm with no rod at all
 // where a rod tapped at (x, y) stands: on the roof or the ground under it, as tall as the tap, at most the level's limit for a roof or for a mast
 function rodAt(x, y) { const s = Math.max(0, Math.min(NS - 1, Math.floor((x + 0.5) * SUB))), k = tk[s];
   if (k === TREE) return { err: 'tree' }; if (k === WATER || k === BOAT) return { err: 'water' }; const b = sky[s], h = Math.max(1.5, Math.min(k === HOUSE ? LVL.roofh || ROOFROD : LVL.maxh || MAXROD, b - y)); // a rod on a roof is a short spike; a free mast can be tall
@@ -41,7 +41,7 @@ function strikeAt(xl, R) { let best = -1, yb = 1e9; const s0 = Math.max(0, Math.
   return { xl, R, yh: Math.max(BASE + 2, yb), s: best, x: sx(best), y: sky[best], k: tk[best], id: tid[best] }; }
 // the storm: every current in the level, from every line under the cloud, half a metre apart
 function storm() { const c = LVL.cloud || [0, G], out = []; for (const I of LVL.I) for (let x = c[0]; x <= c[1]; x += 0.5) { const r = strikeAt(x, Rof(I)); r.I = I; out.push(r); } return out; }
-function judge() { const all = storm(); fails = all.filter(r => !isSafe(r.k)); catches = all.filter(r => r.k === ROD); return all; }
+function judge() { const all = storm(); total = all.length; fails = all.filter(r => !isSafe(r.k)); catches = all.filter(r => r.k === ROD); return all; }
 // which strokes the player sees: a few that the rod caught, and if something was hit, the weakest stroke that hit it
 function pickShows() { shows = []; const pick = (list, n) => { const out = []; for (let k = 0; k < n && list.length; k++) out.push(list[Math.floor((k + 0.5) * list.length / n)]); return out; };
   const byI = I => catches.filter(r => r.I === I), Is = [...LVL.I].sort((a, b) => b - a);
@@ -194,6 +194,7 @@ Proto({
     win(S) { S.tone(660, 1.2, { gain: 0.06 }); S.tone(990, 1, { gain: 0.04, delay: 0.12 }); }, lose(S) { } },
   verdict() { if (!cur) return 0; const done = qt >= LEAD + MEET + RET + 12; if (!isSafe(cur.r.k)) return done ? -1 : 0; return done && qi === shows.length - 1 ? (fails.length ? -1 : 1) : 0; },
   winText: () => 'Гроза пройшла над усім небом: кожен удар пішов у громовідвід, у дерево чи в землю.',
+  score: () => Math.max(0, 1 - fails.length / Math.max(1, base)), // the share of the harmful strokes the rod took away
   winTitle: () => 'Село вціліло',
   failTitle: () => { const r = shows[shows.length - 1] || {}; return 'Удар ' + r.I + ' кА влучив у ' + kindName(r.k); },
   failText: () => { const r = shows[shows.length - 1] || {}, weak = LVL.I.length > 1 && r.I === Math.min(...LVL.I);
