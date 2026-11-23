@@ -96,6 +96,7 @@ Proto({
       if (riv && riv.stir > 0.2 && Math.random() < dt * 4) S.noise(0.12, { f: 600 + Math.random() * 600, q: 2, gain: 0.06 }); },
     win(S) { S.tone(523, 0.8, { gain: 0.05 }); S.tone(784, 0.9, { gain: 0.04, delay: 0.15 }); }, lose(S) { S.noise(0.8, { type: 'lowpass', f: 300, gain: 0.35, attack: 0.01 }); } },
   winText: () => 'Засипано до мітки' + ((LVS.houses || []).length ? ', хата ціла.' : '.'),
+  failTitle: () => buried >= 0 ? 'Осув засипав хату' : quake && !lastArr ? 'Жоден схил не зрушив' : 'До мітки не досипало',
   failText: () => buried >= 0 ? 'Осув засипав хату.' : quake && !lastArr ? 'Поштовх не зрушив жодного схилу: осередок задалеко або заглибоко.' : 'До мітки не досипало: осув зупинився раніше.',
   draw(g, K, now, size) {
     const key = size + ':' + LEVELS.indexOf(LVS); if (key !== backKey) { back = paintBack(size, K); backKey = key; } g.drawImage(back, 0, 0); const dt = Math.max(0, Math.min(0.25, (now - lastNow) / 1000)); lastNow = now;
@@ -170,6 +171,7 @@ Proto({
       const dusty = Math.min(1, cloud.length / 50); if (dusty > 0.02) { g.save(); g.globalCompositeOperation = 'lighter'; const sx = size * 1.02, sy = -size * 0.08;
         for (let k = 0; k < 7; k++) { const a0 = 2.05 + k * 0.09 + Math.sin(now / 2400 + k) * 0.012, w = 0.018 + 0.02 * Art.h(k + 3), L = size * 1.7; g.fillStyle = 'rgba(255,214,150,' + (0.038 * gold * dusty * (0.6 + 0.4 * Art.h(k))) + ')'; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + Math.cos(a0 - w) * L, sy + Math.sin(a0 - w) * L); g.lineTo(sx + Math.cos(a0 + w) * L, sy + Math.sin(a0 + w) * L); g.closePath(); g.fill(); } g.restore(); } } else gold = 0;
     if (this.hover && this.state === 'idle') { const q = qAt(this.hover[0], this.hover[1]); if (q) quakeRings(g, K, size, q[0], q[1], now, 1); }
+    if (quake && this.state === 'lost') quakeRings(g, K, size, quake.x, quake.h, now, 0.7); // after a miss: how far the shaking reached, on a phone too
     // the quake itself: the shear front spreads through the ground from the hypocentre, with the faster, fainter P front ahead of it
     if (quake && stepN <= lastArr + 40) { g.save(); groundClip(g, K, size); g.globalCompositeOperation = 'lighter'; const cx = X(quake.x, K), cy = Y(quake.h, K);
       for (const [v, a] of [[VS * 1.7, 0.25], [VS, 0.55]]) { const r = stepN * v * K, f = Math.max(0, 1 - stepN * v / 80); if (f <= 0) continue; const rg = g.createRadialGradient(cx, cy, Math.max(0, r - 2.5 * K), cx, cy, r + 0.5 * K); rg.addColorStop(0, 'rgba(255,200,140,0)'); rg.addColorStop(0.8, 'rgba(255,200,140,' + a * f + ')'); rg.addColorStop(1, 'rgba(255,200,140,0)'); g.fillStyle = rg; g.beginPath(); g.arc(cx, cy, r + 0.5 * K, 0, 7); g.fill(); }

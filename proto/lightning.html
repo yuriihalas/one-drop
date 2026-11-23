@@ -243,6 +243,7 @@ Proto({
         if (scarT >= 0) { const ag = Math.max(0, now - scarT) / 1000; if (ag > 0.25 && ag < 2.6) { const ga = 0.32 * Math.min(1, (ag - 0.25) * 4) * Math.max(0, 1 - (ag - 0.25) / 2.35); g.save(); g.globalCompositeOperation = 'lighter'; g.translate(Math.sin(ag * 1.7) * K * 0.6, Math.cos(ag * 1.3) * K * 0.4);
           g.strokeStyle = 'rgba(190,140,255,' + ga + ')'; g.lineWidth = K * 1.1; g.lineCap = 'round'; g.lineJoin = 'round'; g.filter = 'blur(' + (K * 0.8 * (this.zoom || 1)).toFixed(1) + 'px)'; whole(); g.stroke(); g.filter = 'none'; g.restore(); } } } }
     if (this.hover && this.state === 'idle') { const r = rodAt(...toW(this.hover[0], this.hover[1])); if (!r.err) { zoneArcs(g, r, K, now); drawRod(g, r, K, false, true); } }
+    if (rod && this.state === 'lost') zoneArcs(g, rod, K, now); // after a miss the zone of the rod that stood shows why the stroke slipped past it, on a phone too
     g.restore(); g.restore();
     if (flash > 0.02) { g.save(); g.globalCompositeOperation = 'lighter'; const b = cur ? { x: toS(cur.r.x, cur.r.y)[0], y: toS(cur.r.x, cur.r.y)[1] } : { x: G / 2, y: G }, fg = g.createRadialGradient(b.x * K, b.y * K, 0, b.x * K, b.y * K, size * 0.9); fg.addColorStop(0, 'rgba(200,215,255,' + flash * 0.45 + ')'); fg.addColorStop(1, 'rgba(120,140,200,' + flash * 0.12 + ')'); g.fillStyle = fg; g.fillRect(0, 0, size, size); g.restore(); }
   }
