@@ -67,7 +67,12 @@ c/=4.;c=1.17-pow(c,1.4);return pow(abs(c),8.);}
 vec3 sunCol(){return mix(mix(vec3(1.,.97,.9),vec3(1.,.66,.3),uFin),vec3(.62,.72,.92),uNight);}
 vec3 nightSky(vec3 d,vec3 L){float z=max(d.z,0.);vec3 c=mix(vec3(.05,.08,.16),vec3(.01,.02,.06),pow(z,.6));
 vec2 q=d.xy/(z+.15)*55.;vec2 cell=floor(q);float st=step(.972,hash(cell))*smoothstep(.42,0.,length(fract(q)-.5))*(.6+.4*sin(uT*2.+hash(cell+3.)*20.));c+=vec3(.9,.95,1.)*st*smoothstep(.02,.2,z);
-vec2 mw=d.xy/(z+.25);float bd=dot(mw,vec2(.6,.8))-.2,band=exp(-bd*bd*6.);c+=vec3(.16,.17,.24)*band*fbm(mw*3.)*smoothstep(.02,.3,z);float md=dot(d,L);c+=vec3(.9,.94,1.)*smoothstep(.9994,.9997,md)+vec3(.35,.45,.7)*pow(max(md,0.),60.)*.5;return c;}
+vec2 mw=d.xy/(z+.25);float bd=dot(mw,vec2(.6,.8))-.2,band=exp(-bd*bd*6.);c+=vec3(.16,.17,.24)*band*fbm(mw*3.)*smoothstep(.02,.3,z);
+// a meteor every few seconds: a bright head with a tail that grows, then the whole streak flares and fades in under a second; the water mirrors it too
+float mk=floor(uT/6.5),mp=fract(uT/6.5)/.13;if(mp<1.){vec2 fa=vec2(60.)-uCP.xy;vec2 ap=vec2(mod(atan(d.y,d.x)-atan(fa.y,fa.x)+3.1416,6.2832)-3.1416,asin(z)); // azimuth from where the camera looks, and elevation
+vec2 m0=vec2((hash(vec2(mk,1.7))-.5)*.9,.1+hash(vec2(mk,4.2))*.22),mv=normalize(vec2(hash(vec2(mk,8.1))-.5,-.45)),hd=m0+mv*mp*.22,ab=mv*.1*min(mp*3.,1.)+1e-5,tl=hd-ab;
+float hh=clamp(dot(ap-tl,ab)/dot(ab,ab),0.,1.);c+=vec3(.85,.92,1.)*smoothstep(.0045,0.,length(ap-tl-ab*hh))*hh*hh*sin(mp*3.1416)*1.8*smoothstep(.0,.04,z);}
+float md=dot(d,L);c+=vec3(.9,.94,1.)*smoothstep(.9994,.9997,md)+vec3(.35,.45,.7)*pow(max(md,0.),60.)*.5;return c;}
 vec3 sky(vec3 d,vec3 L){if(uNight>.5)return nightSky(d,L);float z=max(d.z,0.);
 vec3 day=mix(vec3(.8,.88,.97),vec3(.3,.55,.92),pow(z,.5)),eve=mix(vec3(1.,.6,.28),vec3(.26,.28,.55),pow(z,.42));
 vec3 c=mix(day,eve,uFin);
