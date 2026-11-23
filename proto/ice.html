@@ -22,7 +22,7 @@ function solveFlow(L) { vxA.fill(0); vyA.fill(0); if (!L.flow) return; const [U,
     for (let k = 0; k < 6; k++) { const j = nb[i * 6 + k]; if (j < 0 || kind[j] === ROCK) continue; sum += phi[j]; n++; } if (n) phi[i] += 1.85 * (sum / n - phi[i]); }
   for (let i = 0; i < N; i++) { if (kind[i] === ROCK) continue; let gx = 0, gy = 0;
     for (let k = 0; k < 6; k++) { const j = nb[i * 6 + k], d = j < 0 || kind[j] === ROCK ? 0 : phi[j] - phi[i]; gx += d * EX[k]; gy += d * EY[k] / 0.866; }
-    vxA[i] = gx / 3; vyA[i] = gy / 3 / 0.75; } }
+    vxA[i] = gx / 3; vyA[i] = gy / 4; } /* two neighbours lie along x (gx = 3U over them all), four lie a row away (gy = 4V) */ }
 for (let y = 0; y < HH; y++) for (let x = 0; x < W; x++) { const i = y * W + x, o = y & 1; edge[i] = x === 0 || y === 0 || x === W - 1 || y === HH - 1 ? 1 : 0; const c = [[x - 1, y], [x + 1, y], [x - 1 + o, y - 1], [x + o, y - 1], [x - 1 + o, y + 1], [x + o, y + 1]];
   for (let k = 0; k < 6; k++) { const [X, Y] = c[k]; nb[i * 6 + k] = X < 0 || Y < 0 || X >= W || Y >= HH ? -1 : Y * W + X; } }
 function iceBuild(L) { LVI = L; kind.fill(WATER); ice.fill(0); born.fill(0); parent.fill(-1); stepN = 0; iceN = 0; fresh = [];

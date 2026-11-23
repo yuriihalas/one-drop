@@ -79,7 +79,7 @@ let quakeT = 0;
 function groundClip(g, K, size) { g.beginPath(); g.moveTo(0, size); for (let x = 0; x < G; x++) g.lineTo(X(x, K), Y(H(x), K)); g.lineTo(size, Y(H(G - 1), K)); g.lineTo(size, size); g.closePath(); g.clip(); }
 // rings of equal shaking around a hypocentre: inside the inner one the ground jolts hard, inside the outer one only the weakest slopes give
 function quakeRings(g, K, size, qx, qh, now, alpha) { const M = LVS.mag || 14; g.save(); groundClip(g, K, size); g.lineWidth = Math.max(1, K * 0.2); g.setLineDash([K * 0.8, K * 0.7]); g.lineDashOffset = -now / 50;
-  [[2, 'rgba(255,150,80,'], [1, 'rgba(255,210,140,'], [0.6, 'rgba(255,240,210,']].forEach(([a, c]) => { const r = M / a - R0; g.strokeStyle = c + (0.75 * alpha) + ')'; g.beginPath(); g.arc(X(qx, K), Y(qh, K), r * K, 0, 7); g.stroke(); });
+  [[2, 'rgba(255,150,80,'], [1, 'rgba(255,210,140,'], [0.6, 'rgba(255,240,210,']].forEach(([a, c]) => { const r = M / a - R0; if (r <= 0.5) return; g.strokeStyle = c + (0.75 * alpha) + ')'; g.beginPath(); g.arc(X(qx, K), Y(qh, K), r * K, 0, 7); g.stroke(); });
   g.setLineDash([]); g.globalCompositeOperation = 'lighter'; const hg = g.createRadialGradient(X(qx, K), Y(qh, K), 0, X(qx, K), Y(qh, K), 3 * K); hg.addColorStop(0, 'rgba(255,190,110,' + 0.8 * alpha + ')'); hg.addColorStop(1, 'rgba(255,140,60,0)'); g.fillStyle = hg; g.fillRect(X(qx, K) - 3 * K, Y(qh, K) - 3 * K, 6 * K, 6 * K); g.restore(); }
 Proto({
   G, levels: LEVELS, speed: 10, slowmo: 0.35, idleText: 'Торкніться землі там, де під нею має бути осередок поштовху: що глибше, то ширше й слабше трусить.',

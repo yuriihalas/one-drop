@@ -31,7 +31,7 @@ function shapes(L) {
 function liBuild(L) { LVL = L; rod = null; fails = []; catches = []; shows = []; qi = 0; qt = 0;
   for (let s = 0; s < NS; s++) { const x = sx(s); gnd[s] = sky[s] = groundAt(x); tk[s] = (L.lakes || []).some(l => x >= l[0] && x <= l[1]) ? WATER : GROUND; tid[s] = -1; } shapes(L); base = storm().filter(r => !isSafe(r.k)).length; } // how many strokes would do harm with no rod at all
 // where a rod tapped at (x, y) stands: on the roof or the ground under it, as tall as the tap, at most the level's limit for a roof or for a mast
-function rodAt(x, y) { const s = Math.max(0, Math.min(NS - 1, Math.floor((x + 0.5) * SUB))), k = tk[s];
+function rodAt(x, y) { const s = Math.max(0, Math.min(NS - 1, Math.floor(x * SUB))), k = tk[s];
   if (k === TREE) return { err: 'tree' }; if (k === WATER || k === BOAT) return { err: 'water' }; const b = sky[s], h = Math.max(1.5, Math.min(k === HOUSE ? LVL.roofh || ROOFROD : LVL.maxh || MAXROD, b - y)); // a rod on a roof is a short spike; a free mast can be tall
   return { x: sx(s), base: b, h, tip: b - h, on: k }; }
 function placeRod(r) { rod = r; raise(r.x - 0.25, r.x + 0.25, () => r.tip, ROD, 0); }

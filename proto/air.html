@@ -126,7 +126,7 @@ Proto({
       g.save(); g.translate(x, y); g.rotate(Math.sin(now / 55) * 0.35 * Math.min(1, a * 2) + (win ? Math.sin(now / 160) * 0.25 : 0)); Art.bell(g, 0, -2.4 * K, K * 1.15, Math.min(1, a * 2 + (win ? 0.6 : 0))); g.restore(); });
     // a cat asleep in a corner of the first room; when the room sings it wakes, lifts its head and pricks its ears
     { const R = LVA.rooms[0], c = K * 1.6; let aw = Math.min(1, gold * 1.5), best = null, bd = 0;
-      if (LVA.quiet) { const q = LVA.quiet[0]; catLive = Math.max(catLive * 0.99, src >= 0 ? Math.abs(P1[q[1] * G + q[0]]) : 0); aw = Math.min(1, Math.pow(catLive / LVA.tq, 3)); } // this cat wakes only if its own spot gets loud
+      if (LVA.quiet) { const q = LVA.quiet[0]; const a = src >= 0 ? Math.abs(P1[q[1] * G + q[0]]) : 0; catLive = Math.max(catLive * 0.99, tick > TOTAL - 500 ? a : Math.min(a, LVA.tq * 0.9)); /* only the settled room can wake it, the same window the verdict uses */ aw = Math.min(1, Math.pow(catLive / LVA.tq, 3)); } // this cat wakes only if its own spot gets loud
       for (const [qx, qy] of LVA.quiet ? [LVA.quiet[0]] : [[R[2] - 4, R[3] - 3.5], [R[0] + 4, R[3] - 3.5], [R[2] - 4, R[1] + 4], [R[0] + 4, R[1] + 4]]) { let d = 99; for (const b of LVA.bells.concat([LVA.best])) d = Math.min(d, Math.hypot(b[0] - qx, b[1] - qy)); if (d > bd) { bd = d; best = [qx, qy]; } }
       const near = !LVA.quiet && bd < 7, cx = ((best ? best[0] : 0) - 0.2) * K, cy = (best ? best[1] : 0) * K;
       if (!near && R[2] - R[0] > 14 && R[3] - R[1] > 10) { g.save(); g.translate(cx, cy); g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(c * 0.2, c * 0.3, c * 1.5, c * 1.1, 0, 0, 7); g.fill();
