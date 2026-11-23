@@ -90,7 +90,7 @@ Proto({
   focus() { if (quake && stepN <= lastArr + 4 && !moving) return [quake.x, Math.round(G - quake.h) - 6]; let toe = -1, lo = 1e9; for (let x = 0; x < G; x++) if (act[x] && soil[x] > 0.2 && H(x) < lo) { lo = H(x); toe = x; } return toe < 0 ? null : [toe, Math.round(G - H(toe)) - 3]; },
   hold() { return moving > 0; },
   // sound: the ground cracks at the touch, rumbles as long as it moves (louder the more moves), stones click as they bounce
-  sfx: { tap(S) { S.noise(0.25, { f: 700, q: 0.8, gain: 0.3, attack: 0.002 }); S.noise(0.12, { type: 'highpass', f: 2500, gain: 0.15, delay: 0.05 }); },
+  sfx: { tap(S) { S.noise(2.2, { type: 'lowpass', f: 90, f2: 40, gain: 0.5, attack: 0.25 }); S.noise(0.9, { type: 'lowpass', f: 300, gain: 0.18, attack: 0.05, delay: 0.1 }); }, // the quake: a deep roll that swells and dies, with a dull crack in it
     frame(S, dt, st) { const live = st === 'run' || st === 'replay'; let n = 0; if (live) for (let x = 0; x < G; x++) if (act[x] && soil[x] > 0.2) n++;
       S.level('rumble', Math.min(0.45, n * 0.012), { type: 'lowpass', f: 110 }); S.level('hiss', Math.min(0.12, n * 0.003), { type: 'bandpass', f: 900, q: 0.5 });
       const rolling = stones.filter(t => t.rest < 0.1).length; if (Math.random() < rolling * dt * 1.5) S.noise(0.03, { f: 1500 + Math.random() * 2000, q: 3, gain: 0.12, attack: 0.001 });
