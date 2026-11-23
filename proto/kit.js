@@ -11,16 +11,27 @@
 //   draw(g, K, now) paint everything; K is pixels per cell
 //   slowmo   if set, a win is replayed once at this fraction of normal speed, framed like a slow-motion shot;
 //            P.state is 'replay' while it plays and P.slow is the replay's progress clock in seconds
+//   focus()  optional: the cell [x, y] the replay camera dives to (default: the touched cell)
+//   hold()   optional: true while the replay camera should stay close (it lets go after 12 s at most)
+//   P.shake  set it to shake the view by that many cells; it dies away by itself
+//   P.flash  set it (0..1) to flash the frame with light, P.flashCol its colour; it fades by itself
+//   sfx      optional sound: { tap(S), frame(S, dt, state), win(S), lose(S) }, S being Snd below; silent until the player turns sound on
 function Proto(P) {
   const $ = id => document.getElementById(id);
   document.body.insertAdjacentHTML('beforeend',
     '<div id="wrap"><div id="top"><a href="index.html">← Стихії</a><b id="lvname"></b><span id="lvs"></span></div>' +
     '<div id="stage"><canvas id="cv"></canvas><div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button class="go" id="cgo">Почати</button></div></div></div>' +
-    '<div id="bar"><div id="msg"></div><button id="replay">Повтор</button><button id="hint">Підказка</button><button id="again">Ще раз</button><button id="next" class="go">Далі</button></div>' +
+    '<div id="bar"><div id="msg"></div><button id="replay">Повтор</button><button id="hint">Підказка</button><button id="again">Ще раз</button><button id="next" class="go">Далі</button><button id="snd"></button></div>' +
     '<div id="sub">Прототип. Один дотик на спробу. Після трьох невдалих спроб з’явиться підказка.</div></div>');
   const cv = $('cv'), g = cv.getContext('2d'), stage = $('stage');
-  let size = 600, lv = 0, state = 'card', tries = 0, hintOn = false, lastTap = null, acc = 0, replayAt = 0, repStart = 0;
+  let lostShown = 0, winShown = 0, cz = 1, cfx = 0, cfy = 0, lastNow = 0, size = 600, lv = 0, state = 'card', tries = 0, hintOn = false, lastTap = null, acc = 0, replayAt = 0, repStart = 0;
   P.say = t => { $('msg').textContent = t; };
+  const sndLabel = () => { $('snd').textContent = Snd.on ? 'Звук увімкнено' : 'Звук вимкнено'; };
+  try { Snd.on = localStorage.getItem('proto-sound') === '1'; } catch (e) { } sndLabel();
+  $('snd').onclick = () => { Snd.on = !Snd.on; try { localStorage.setItem('proto-sound', Snd.on ? '1' : '0'); } catch (e) { } if (Snd.on) Snd.init(); else Snd.hush(); sndLabel(); };
+  // a player who asks the system for less motion gets no shaking and only soft flashes
+  const calm = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const sfx = (k, ...a) => { if (Snd.on && P.sfx && P.sfx[k] && Snd.ctx) try { P.sfx[k](Snd, ...a); } catch (e) { console.error(e); } };
   function resize() {
     const css = Math.max(240, Math.min(innerWidth - 24, innerHeight - (innerWidth < 600 ? 250 : 190), 760)), dpr = Math.min(devicePixelRatio || 1, 2);
     stage.style.width = stage.style.height = css + 'px'; size = Math.round(css * dpr); cv.width = cv.height = size;
@@ -28,18 +39,18 @@ function Proto(P) {
   addEventListener('resize', resize); resize();
   P.levels.forEach((L, k) => { const b = document.createElement('button'); b.className = 'lv'; b.textContent = k + 1; b.title = L.name; b.onclick = () => setLevel(k); $('lvs').appendChild(b); });
   function setLevel(i) {
-    lv = i; tries = 0; hintOn = false; replayAt = 0; $('hint').style.display = 'none'; $('replay').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
+    lv = i; tries = 0; hintOn = false; replayAt = 0; winShown = 0; cz = 1; P.zoom = 1; $('hint').style.display = 'none'; $('replay').style.display = 'none'; const L = P.levels[i]; P.L = L; P.build(L);
     document.querySelectorAll('.lv').forEach((b, k) => b.classList.toggle('cur', k === i));
     $('lvname').textContent = (i + 1) + '. ' + L.name; $('cnum').textContent = 'РІВЕНЬ ' + (i + 1) + ' З ' + P.levels.length;
     $('cname').textContent = L.name; $('ctext').textContent = L.text; $('card').classList.add('on'); $('next').style.display = 'none'; state = 'card'; P.say('');
   }
-  function begin() { if (state !== 'card') return; $('card').classList.remove('on'); state = 'idle'; P.say(P.idleText || 'Торкніться поля.'); }
-  function reset() { if (state === 'card') return; P.build(P.L); state = 'idle'; replayAt = 0; $('next').style.display = 'none'; $('replay').style.display = 'none'; P.say(P.idleText || 'Торкніться поля.'); }
+  function begin() { if (Snd.on) Snd.init(); if (state !== 'card') return; $('card').classList.remove('on'); state = 'idle'; P.say(P.idleText || 'Торкніться поля.'); }
+  function reset() { if (state === 'card') return; P.build(P.L); state = 'idle'; replayAt = 0; winShown = 0; cz = 1; P.zoom = 1; $('next').style.display = 'none'; $('replay').style.display = 'none'; P.say(P.idleText || 'Торкніться поля.'); }
   function finish(v) {
-    if (state === 'replay') { state = 'win'; return; }
+    if (state === 'replay') { state = 'win'; winShown = performance.now(); sfx('win'); return; }
     state = v > 0 ? 'win' : 'lost';
-    if (v > 0) { $('hint').style.display = 'none'; if (P.slowmo && state !== 'replay') { $('replay').style.display = 'inline-block'; replayAt = performance.now() + 900; } P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
-    else { P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.'); if (tries >= 3 && P.L.best && !hintOn) $('hint').style.display = 'inline-block'; }
+    sfx(v > 0 ? 'win' : 'lose'); if (v > 0) { const lb = document.querySelectorAll('.lv')[lv]; if (lb) lb.classList.add('done'); /* won in this visit: the level button turns green */ $('hint').style.display = 'none'; if (P.slowmo && state !== 'replay') { $('replay').style.display = 'inline-block'; replayAt = performance.now() + 900; } P.say((P.winText ? P.winText() : 'Вийшло.') + (tries === 1 ? ' З першої спроби.' : ' Спроба № ' + tries + '.')); $('next').style.display = 'inline-block'; $('next').textContent = lv < P.levels.length - 1 ? 'Далі' : 'З початку'; }
+    else { lostShown = performance.now(); P.say(P.failText() + ' Торкніться поля, щоб спробувати ще раз.'); if (tries >= 3 && P.L.best && !hintOn) $('hint').style.display = 'inline-block'; }
   }
   function cell(e) { const r = stage.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * P.G), Math.floor((e.clientY - r.top) / r.height * P.G)]; }
   P.hover = null;
@@ -50,34 +61,54 @@ function Proto(P) {
     if (state === 'lost') { reset(); return; } if (state === 'replay') return;
     if (state !== 'idle') return;
     const [x, y] = cell(e); if (x < 0 || y < 0 || x >= P.G || y >= P.G) return;
-    if (P.tap(x, y) === false) return; lastTap = [x, y]; tries++; state = 'run';
+    if (P.tap(x, y) === false) return; lastTap = [x, y]; tries++; state = 'run'; if (Snd.on) Snd.init(); sfx('tap');
   });
   // the slow-motion replay: rebuild, touch the same cell, and step at a fraction of the speed
-  function replay() { if (!lastTap || state === 'run' || state === 'card') return; replayAt = 0; P.build(P.L); P.tap(lastTap[0], lastTap[1]); P.say('Повтор, уповільнено.'); state = 'replay'; acc = 0; repStart = performance.now(); }
+  function replay() { if (!lastTap || state === 'run' || state === 'card') return; replayAt = 0; winShown = 0; P.build(P.L); P.tap(lastTap[0], lastTap[1]); P.say('Повтор, уповільнено.'); state = 'replay'; sfx('tap'); acc = 0; repStart = performance.now(); }
   function skipReplay() { let n = 0; while (state === 'replay' && n++ < 200000) { P.step(); if (P.verdict()) finish(1); } P.say((P.winText ? P.winText() : 'Вийшло.')); }
   $('replay').onclick = replay;
   stage.addEventListener('pointerdown', e => { if (state === 'replay' && !e.target.closest('#card')) skipReplay(); });
   $('hint').onclick = () => { hintOn = true; $('hint').style.display = 'none'; reset(); P.say('Спробуйте там, де пульсує коло.'); };
   $('again').onclick = reset; $('cgo').onclick = begin; $('next').onclick = () => setLevel(lv < P.levels.length - 1 ? lv + 1 : 0);
-  addEventListener('keydown', e => { if (e.repeat) return; if (state === 'card' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); begin(); } else if (e.code === 'KeyR') reset(); else if (e.code === 'KeyN' && state === 'win') $('next').onclick(); });
+  addEventListener('keydown', e => { if (e.repeat) return; if (state === 'card' && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); begin(); } else if (e.code === 'KeyR') reset(); else if (e.code === 'KeyN' && state === 'win') $('next').onclick(); else if (e.code === 'KeyS') $('snd').onclick(); else if (e.code === 'Space' && state === 'replay') { e.preventDefault(); skipReplay(); } });
   function frame(now) {
+    requestAnimationFrame(frame); // first, so one bad frame cannot stop the loop
     if (state === 'run') { for (let k = 0; k < (P.speed || 1) && state === 'run'; k++) { P.step(); const v = P.verdict(); if (v) finish(v); } }
-    else if (state === 'replay') { acc += (P.speed || 1) * P.slowmo; P.slow = (now - repStart) / 1000; while (acc >= 1 && state === 'replay') { acc--; P.step(); if (P.verdict()) finish(1); } if (state === 'win') P.say(P.winText ? P.winText() : 'Вийшло.'); }
+    // the replay opens on the moment of the touch at a quarter of the replay speed, then eases up to it
+    else if (state === 'replay') { P.slow = (now - repStart) / 1000; acc += (P.speed || 1) * P.slowmo * (P.slow < 1.3 ? 0.25 : Math.min(1, 0.25 + (P.slow - 1.3) * 0.75)); while (acc >= 1 && state === 'replay') { acc--; P.step(); if (P.verdict()) finish(1); } if (state === 'win') P.say(P.winText ? P.winText() : 'Вийшло.'); }
     else if (state === 'win' && replayAt && now > replayAt) replay();
     else if ((state === 'win' || state === 'lost') && P.after) P.after();
-    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, size, size); P.state = state; P.draw(g, size / P.G, now, size);
+    // the replay camera: it dives in on the touched spot, holds while the moment plays, then pulls back to the whole board
+    const dt = Math.min(0.05, Math.max(0, (now - lastNow) / 1000)); lastNow = now; const Z = 2.1, K0 = size / P.G;
+    const tz = state === 'replay' && (P.slow < 2.2 || (P.hold && P.slow < 12 && P.hold())) ? Z : 1; cz += (tz - cz) * Math.min(1, dt * (tz > cz ? 3.2 : 1.1));
+    if (state === 'replay' && lastTap) { const f = (P.focus && P.focus()) || lastTap, k = P.slow < 0.1 ? 1 : Math.min(1, dt * 3); cfx += ((f[0] + 0.5) * K0 - cfx) * k; cfy += ((f[1] + 0.5) * K0 - cfy) * k; }
+    // a shake zooms in a touch so the jolt never shows the edge of the board
+    if (calm || !(P.shake > 0.02)) P.shake = 0; const cs = cz * (1 + 0.05 * Math.min(1, P.shake)), kz = (cz - 1) / (Z - 1), sx = cfx + (size / 2 - cfx) * kz, sy = cfy + (size / 2 - cfy) * kz, lo = size - cs * size, cl = v => Math.min(0, Math.max(lo, v));
+    let tx = cl(sx - cs * cfx), ty = cl(sy - cs * cfy);
+    if (P.shake) { tx = cl(tx + (Math.random() - 0.5) * 2 * P.shake * K0 * cz); ty = cl(ty + (Math.random() - 0.5) * 2 * P.shake * K0 * cz); P.shake *= Math.pow(0.02, dt); }
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, size, size); g.setTransform(cs, 0, 0, cs, tx, ty); P.state = state; P.zoom = cs; P.draw(g, size / P.G, now, size);
+    sfx('frame', dt, state);
+    if (P.flash > 0.01) { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'lighter'; g.globalAlpha = Math.min(calm ? 0.2 : 1, P.flash); g.fillStyle = P.flashCol || '#cfe0ff'; g.fillRect(0, 0, size, size); g.restore(); P.flash *= Math.pow(0.004, dt); } else P.flash = 0;
     if (state === 'replay') { // the slow-motion frame: letterbox bars, a soft vignette and a label
       const u = size / 600, bar = Math.min(1, (now - repStart) / 400) * 20 * u; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
       const vg = g.createRadialGradient(size / 2, size / 2, size * 0.35, size / 2, size / 2, size * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)'); g.fillStyle = vg; g.fillRect(0, 0, size, size);
       g.fillStyle = '#000'; g.fillRect(0, 0, size, bar); g.fillRect(0, size - bar, size, bar);
-      g.fillStyle = 'rgba(255,255,255,.85)'; g.font = '600 ' + Math.round(12 * u) + 'px system-ui,sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('ПОВТОР  ×' + (Number.isInteger(1 / P.slowmo) ? '1/' + (1 / P.slowmo) : String(P.slowmo).replace('.', ',')), 16 * u, bar / 2);
+      g.fillStyle = 'rgba(255,255,255,.85)'; g.font = '600 ' + Math.round(12 * u) + 'px system-ui,sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; const sp = P.slowmo * (P.slow < 1.3 ? 0.25 : Math.min(1, 0.25 + (P.slow - 1.3) * 0.75)), inv = Math.round(1 / sp); g.fillText('ПОВТОР  ×1/' + inv, 16 * u, bar / 2); // the speed it is playing at now
       if ((now / 500 | 0) % 2) { g.fillStyle = '#ff4d4d'; g.beginPath(); g.arc(size - 22 * u, bar / 2, 5 * u, 0, 7); g.fill(); }
       g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.6)'; g.fillText('дотик пропускає', size - 34 * u, bar / 2); g.restore(); }
+    if (state === 'lost' && lostShown) { const u = size / 600, a = Math.min(1, (now - lostShown) / 700), t = P.failText(); g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.filter = 'none';
+      const bg = g.createLinearGradient(0, size * 0.72, 0, size); bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, 'rgba(20,0,0,' + 0.5 * a + ')'); g.fillStyle = bg; g.fillRect(0, size * 0.72, size, size * 0.28);
+      g.globalAlpha = a; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 10 * u; g.fillStyle = '#ffd4c8'; let fs = 20 * u; g.font = '600 ' + Math.round(fs) + 'px system-ui,sans-serif'; while (g.measureText(t).width > size * 0.92 && fs > 11 * u) { fs -= 1 * u; g.font = '600 ' + Math.round(fs) + 'px system-ui,sans-serif'; }
+      g.fillText(t, size / 2, size * 0.88); g.font = Math.round(13 * u) + 'px system-ui,sans-serif'; g.fillStyle = 'rgba(255,255,255,.75)'; g.fillText('торкніться, щоб спробувати ще', size / 2, size * 0.935); g.restore(); }
+    if (state === 'win' && winShown) { // after the replay, the result fades in over the bottom of the frame, as a title
+      const u = size / 600, a = Math.min(1, (now - winShown) / 900), t = P.winText ? P.winText() : 'Вийшло.'; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.filter = 'none';
+      const bg = g.createLinearGradient(0, size * 0.68, 0, size); bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, 'rgba(0,0,0,' + 0.55 * a + ')'); g.fillStyle = bg; g.fillRect(0, size * 0.68, size, size * 0.32);
+      g.globalAlpha = a; g.textAlign = 'center'; g.textBaseline = 'middle'; g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 14 * u; g.fillStyle = '#fff'; let fs = 30 * u; g.font = '600 ' + Math.round(fs) + 'px system-ui,sans-serif'; while (g.measureText(t).width > size * 0.9 && fs > 14 * u) { fs -= 2 * u; g.font = '600 ' + Math.round(fs) + 'px system-ui,sans-serif'; }
+      g.fillText(t, size / 2, size * 0.86 + (1 - a) * 10 * u); g.font = Math.round(15 * u) + 'px system-ui,sans-serif'; g.fillStyle = '#ffe2b0'; g.fillText(tries === 1 ? 'з першої спроби' : 'спроба № ' + tries, size / 2, size * 0.925 + (1 - a) * 10 * u); g.restore(); }
     if (hintOn && state === 'idle') { // the hint: a slow pulsing ring on a spot that is known to win
       const K = size / P.G, b = P.L.best, ph = now / 900 % 1; g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none';
       g.lineWidth = Math.max(2, K * 0.35); g.strokeStyle = 'rgba(255,255,255,' + (0.9 * (1 - ph)) + ')'; g.beginPath(); g.arc((b[0] + 0.5) * K, (b[1] + 0.5) * K, (1.5 + ph * 4) * K, 0, 7); g.stroke();
       g.strokeStyle = 'rgba(255,214,120,.95)'; g.beginPath(); g.arc((b[0] + 0.5) * K, (b[1] + 0.5) * K, 1.5 * K, 0, 7); g.stroke(); g.restore(); }
-    requestAnimationFrame(frame);
   }
   // Test hook: jump to a level, tap a cell, run to the end without drawing.
   window.__p = {
@@ -87,6 +118,27 @@ function Proto(P) {
   };
   setLevel(0); requestAnimationFrame(frame);
 }
+// Sound, synthesised in the browser: filtered noise for fire, wind, rain and thunder, sine partials for bells and ice.
+// It stays silent until the player turns it on; nothing is created before that.
+const Snd = { on: false, ctx: null, out: null, nb: null, beds: {},
+  // created and woken only from a player's gesture (a tap, a key, a button), as browsers require
+  init() { if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); this.out.gain.setTargetAtTime(0.7, this.ctx.currentTime, 0.02); return this.ctx; } const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
+    const c = this.ctx = new C(); this.out = c.createGain(); this.out.gain.value = 0.7; this.out.connect(c.destination);
+    const n = c.sampleRate * 2, b = this.nb = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0); let br = 0; for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; br = (br + 0.02 * w) / 1.02; d[i] = w * 0.6 + br * 3; } return c; },
+  hush() { for (const k in this.beds) this.level(k, 0); if (this.ctx) this.out.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.03); }, // also silences sounds already scheduled, such as a late thunder
+  // a burst of filtered noise: a crackle, a crack, a whoosh, a rumble
+  noise(dur, o = {}) { const c = this.ctx; if (!this.on || !c) return; const t = c.currentTime + (o.delay || 0), s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.nb; s.loop = true; f.type = o.type || 'bandpass'; f.frequency.setValueAtTime(o.f || 1000, t); if (o.f2) f.frequency.exponentialRampToValueAtTime(o.f2, t + dur); f.Q.value = o.q || 1;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(o.gain || 0.2, t + (o.attack || 0.005)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(this.out); s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05); },
+  tone(fr, dur, o = {}) { const c = this.ctx; if (!this.on || !c) return; const t = c.currentTime + (o.delay || 0), s = c.createOscillator(), g = c.createGain(); s.type = o.type || 'sine'; s.frequency.setValueAtTime(fr, t); if (o.f2) s.frequency.exponentialRampToValueAtTime(o.f2, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(o.gain || 0.1, t + (o.attack || 0.01)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); s.connect(g); g.connect(this.out); s.start(t); s.stop(t + dur + 0.05); },
+  // a struck bell: inharmonic partials that die away at different rates
+  bell(fr, dur, gain, delay) { [[1, 1], [2.76, 0.5], [5.4, 0.25], [8.93, 0.12]].forEach(([m, a], k) => this.tone(fr * m, dur / (1 + k * 0.7), { gain: gain * a, delay, attack: 0.004 })); },
+  // a held sound whose loudness follows a level set every frame: noise through a filter, or a steady tone
+  level(name, v, o = {}) { const c = this.ctx; if (!c) return; let b = this.beds[name]; if (!b) { if (!this.on || v <= 0) return; const g = c.createGain(); g.gain.value = 0; g.connect(this.out);
+      if (o.tone) { const s = c.createOscillator(); s.frequency.value = o.tone; s.connect(g); s.start(); b = { g, s }; } else { const s = c.createBufferSource(), f = c.createBiquadFilter(); s.buffer = this.nb; s.loop = true; f.type = o.type || 'lowpass'; f.frequency.value = o.f || 400; f.Q.value = o.q || 0.7; s.connect(f); f.connect(g); s.start(); b = { g, s, f }; }
+      this.beds[name] = b; } b.g.gain.setTargetAtTime(this.on ? v : 0, c.currentTime, 0.12); if (o.tone && b.s.frequency) b.s.frequency.setTargetAtTime(o.tone, c.currentTime, 0.05); } };
 // Small helpers shared by the prototypes.
 function rng(seed) { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
 function emoji(g, ch, x, y, px) { g.font = Math.round(px) + 'px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, x, y); }

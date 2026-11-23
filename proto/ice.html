@@ -39,12 +39,13 @@ const LEVELS = [
   {"name": "Скелі й джерело", "text": "Скеля зупиняє промінь. Тепле джерело забирає холод довкола себе, і промінь біля нього хиріє. Три ліхтарі, одна качка, коротка ніч.", "cold": 0.42, "posts": [[64, 50], [27, 24], [26, 78]], "rocks": [[52, 36, 5], [14, 52, 5], [56, 70, 6]], "springs": [[46, 22, 4]], "ducks": [[62, 24]], "dawn": 720, "best": [46, 50]},
   {"name": "Течія", "text": "Тепер вода тече зліва направо й несе свіжий холод. Промені, що дивляться проти течії, отримують його першими й ростуть швидко; ті, що за течією, ледве рухаються. Смужки на воді показують течію.", "cold": 0.4, "flow": [0.02, 0], "posts": [[8, 48], [20, 20]], "ducks": [[62, 48]], "dawn": 700, "best": [16, 30]},
   {"name": "Проти течії", "text": "Течія сильніша, качок двоє. Обидва ліхтарі лежать проти течії, і кристал має дотягнутися до них раніше, ніж за течією дійде до качки.", "cold": 0.4, "flow": [0.025, 0], "posts": [[6, 30], [10, 74]], "ducks": [[52, 52], [70, 20]], "dawn": 700, "best": [19, 54]},
-  {"name": "Острівці", "text": "Скелі розбивають промені, а качки чекають зверху й знизу. Обидва ліхтарі на одній лінії; знайдіть місце, звідки два промені пройдуть між скелями.", "cold": 0.42, "posts": [[14, 48], [70, 48]], "rocks": [[30, 40, 5], [30, 58, 5], [56, 46, 4]], "ducks": [[42, 20], [42, 80]], "dawn": 800, "best": [46, 50]}];
+  {"name": "Острівці", "text": "Скелі розбивають промені, а качки чекають зверху й знизу. Обидва ліхтарі на одній лінії; знайдіть місце, звідки два промені пройдуть між скелями.", "cold": 0.42, "posts": [[14, 48], [70, 48]], "rocks": [[30, 40, 5], [30, 58, 5], [56, 46, 4]], "ducks": [[42, 20], [42, 80]], "dawn": 800, "best": [46, 50]},
+  {"name": "Холодний струмінь", "text": "Плесо тепле, і кристал у ньому ледь росте. Посередині тече вузький струмінь холодної води, світлий на вигляд. Промінь, що потрапив у нього, біжить уздовж, як по рейці, а косі промені в теплій воді повзуть. Посадіть кристал так, щоб струмінь доніс промені до обох ліхтарів, а косі не встигли дістати качок.", "cold": 0.3, "zones": [[41, 48, 44, 5, 0.7]], "posts": [[6, 48], [76, 48]], "ducks": [[30, 24], [52, 72]], "dawn": 760, "best": [41, 48]}];
 // ---- drawing: water tinted by its cold is painted once per level; ice is added to its own layer cell by cell
 const G = 96, SX = 1.1547, cold0 = new Float32Array(N);
 const low = document.createElement('canvas'); low.width = W; low.height = HH; const lg = low.getContext('2d'), limg = lg.createImageData(W, HH);
 const mask = document.createElement('canvas'); mask.width = W; mask.height = HH; const mg = mask.getContext('2d'), mimg = mg.createImageData(W, HH);
-let ground = null, iceC = null, icg = null, veinC = null, vcg = null, flowT = 0, key = '', drawn = 0, sparks = [], steam = [], lastNow = 0, lostBy = '', winT = 0;
+let ifish = [], frost = null, ground = null, iceC = null, icg = null, veinC = null, vcg = null, flowT = 0, key = '', drawn = 0, sparks = [], steam = [], lastNow = 0, lostBy = '', winT = 0;
 const hash = i => { let h = (i * 2654435761) >>> 0; h ^= h >>> 15; h = (h * 2246822519) >>> 0; h ^= h >>> 13; return (h >>> 0) / 4294967296; };
 const px = (i, K) => { const x = i % W, y = (i - x) / W; return [(x + (y & 1) * 0.5 + 0.5) * SX * K, (y + 0.5) * K]; };
 const at = (p, K) => [(p[0] + 0.5) * SX * K, (p[1] + 0.5) * K];
@@ -78,9 +79,16 @@ function addIce(K) { // new cells go onto the ice layers once: a smooth body, an
     if (sparks.length < 260) sparks.push({ i, a: 0 }); }
 }
 function star(g, x, y, r, a) { g.fillStyle = 'rgba(255,255,255,' + a + ')'; g.beginPath(); g.moveTo(x, y - r); g.quadraticCurveTo(x, y, x + r, y); g.quadraticCurveTo(x, y, x, y + r); g.quadraticCurveTo(x, y, x - r, y); g.quadraticCurveTo(x, y, x, y - r); g.fill(); }
+function makeFrost(size) { const r = rng(4242), segs = [], u = size / 600;
+  const grow = (x, y, a, len, w, d, depth) => { const reach = size * (0.13 + 0.12 * r()); for (let k = 0; k < len; k++) { const l = (5 + r() * 6) * u, nx = x + Math.cos(a) * l, ny = y + Math.sin(a) * l; segs.push({ x1: x, y1: y, x2: nx, y2: ny, d, w });
+      d += l; x = nx; y = ny; a += (r() - 0.5) * 0.12; if (Math.min(x, y, size - x, size - y) > reach) break;
+      if (depth < 3 && r() < 0.32) grow(x, y, a + (r() < 0.5 ? 1 : -1) * Math.PI / 3, len * 0.45 | 0, w * 0.7, d, depth + 1); } };
+  for (let k = 0; k < 44; k++) { const side = k % 4, t = r(), x = side === 0 ? t * size : side === 1 ? size : side === 2 ? t * size : 0, y = side === 0 ? 0 : side === 1 ? t * size : side === 2 ? size : t * size, a = [Math.PI / 2, Math.PI, -Math.PI / 2, 0][side] + (r() - 0.5) * 1.1;
+    grow(x, y, a, 26, 0.7 + 0.5 * r(), r() * size * 0.03, 0); }
+  segs.sort((p, q) => p.d - q.d); const c = document.createElement('canvas'); c.width = c.height = size; return { size, segs, c, g: c.getContext('2d'), i: 0 }; }
 Proto({
   G, levels: LEVELS, speed: 3, slowmo: 0.5, idleText: 'Торкніться води: там народиться кристал.',
-  build(L) { iceBuild(L); cold0.set(s); key = ''; sparks = []; steam = []; lostBy = ''; },
+  build(L) { frost = null; ifish = [];  iceBuild(L); cold0.set(s); key = ''; sparks = []; steam = []; lostBy = ''; },
   tap(x, y) { const c = Math.max(0, Math.min(W - 1, Math.round(x / SX - (y & 1) * 0.5))), i = y * W + c;
     if (kind[i] !== WATER) { this.say(kind[i] === ROCK ? 'На камені кристал не виросте. Торкніться води.' : 'У теплому джерелі лід не візьметься. Торкніться холодної води.'); return false; }
     if ((LVI.ducks || []).some(d => Math.hypot((c - d[0]) * SX, y - d[1]) < 7)) { this.say('Надто близько до качки. Торкніться далі.'); return false; }
@@ -89,10 +97,27 @@ Proto({
   verdict() { const v = iceVerdict(); if (v < 0) lostBy = (LVI.ducks || []).some(d => near(d, 3)) ? 'duck' : 'dawn'; return v; },
   winText: () => 'Лід дійшов до всіх ліхтарів' + ((LVI.ducks || []).length ? ', качки на воді.' : '.'),
   failText: () => lostBy === 'duck' ? 'Лід скував плесо качки.' : 'Світає, а лід дійшов не до всіх ліхтарів: промені пішли не туди або вода була затепла.',
+  // sound: a soft plip at the touch; tiny glassy pings while the crystal grows, more as it grows faster; a rising chime of bells on a win
+  sfx: { tap(S) { S.tone(900, 0.15, { f2: 300, gain: 0.08 }); }, frame(S, dt, st) { const n = fresh.length - (this.n0 || 0); this.n0 = fresh.length; if ((st === 'run' || st === 'replay') && n > 0) if (Math.random() < 0.1) S.bell(2200 + Math.random() * 2600, 0.5, 0.014); },
+    win(S) { [1047, 1319, 1568, 2093].forEach((f, k) => S.bell(f, 2.2, 0.05, k * 0.14)); }, lose(S) { S.tone(330, 0.35, { f2: 220, gain: 0.07, type: 'triangle' }); } },
   draw(g, K, now, size) {
     const k2 = size + ':' + LEVELS.indexOf(LVI); if (k2 !== key) { ground = paintGround(size, K); veinC = document.createElement('canvas'); veinC.width = veinC.height = size; vcg = veinC.getContext('2d'); iceC = document.createElement('canvas'); iceC.width = iceC.height = size; icg = iceC.getContext('2d'); drawn = 0; key = k2; }
     if (drawn > fresh.length) { icg.clearRect(0, 0, size, size); vcg.clearRect(0, 0, size, size); drawn = 0; }
-    const dt = Math.min(0.25, (now - lastNow) / 1000); lastNow = now; g.drawImage(ground, 0, 0); addIce(K);
+    const dt = Math.max(0, Math.min(0.25, (now - lastNow) / 1000)); lastNow = now; g.drawImage(ground, 0, 0); addIce(K);
+    // the northern lights, reflected in the dark water: slow green curtains that fade as the night runs out
+    { const night = this.state === 'win' ? 0 : Math.max(0, 1 - stepN / LVI.dawn * 1.4); if (night > 0.02) { g.save(); g.globalCompositeOperation = 'lighter';
+        for (let k = 0; k < 3; k++) { const ph = now / (9000 + k * 2300) + k * 2.1; g.beginPath(); for (let i = 0; i <= 24; i++) { const x = i / 24 * size, y = size * (0.2 + 0.22 * k) + Math.sin(i * 0.5 + ph * 3) * size * 0.05 + Math.sin(i * 0.17 - ph * 2) * size * 0.06; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+          for (let i = 24; i >= 0; i--) { const x = i / 24 * size, y = size * (0.2 + 0.22 * k) + Math.sin(i * 0.5 + ph * 3) * size * 0.05 + Math.sin(i * 0.17 - ph * 2) * size * 0.06 + size * (0.05 + 0.03 * Math.sin(i * 0.3 + ph)); g.lineTo(x, y); } g.closePath();
+          const ag = g.createLinearGradient(0, size * (0.15 + 0.22 * k), 0, size * (0.33 + 0.22 * k)); ag.addColorStop(0, 'rgba(60,255,170,0)'); ag.addColorStop(0.5, 'rgba(60,255,170,' + 0.09 * night + ')'); ag.addColorStop(1, 'rgba(120,90,255,0)'); g.fillStyle = ag; g.fill(); } g.restore(); } }
+    // fish under the water: they cruise, and swim away from ice that grows toward them; under the ice they are hidden
+    if (!ifish.length) { const r = rng(LEVELS.indexOf(LVI) * 13 + 5); for (let t = 0; t < 300 && ifish.length < 3; t++) { const x = 4 + r() * (W - 8), y = 4 + r() * (HH - 8), i = (y | 0) * W + (x | 0); if (kind[i] === WATER && !ice[i]) ifish.push({ x, y, a: r() * 6.283, v: 2, ph: r() * 6, s: 0.85 + r() * 0.35 }); } }
+    for (const f of ifish) { let ax = 0, ay = 0; for (let dy = -6; dy <= 6; dy += 2) for (let dx = -6; dx <= 6; dx += 2) { const X = (f.x | 0) + dx, Y = (f.y | 0) + dy; if (X >= 0 && Y >= 0 && X < W && Y < HH && ice[Y * W + X]) { ax -= dx; ay -= dy; } }
+      const fl = ax || ay; if (fl) f.a += Math.atan2(Math.sin(Math.atan2(ay, ax) - f.a), Math.cos(Math.atan2(ay, ax) - f.a)) * Math.min(1, dt * 6); else f.a += Math.sin(now / 1700 + f.ph) * dt * 0.6;
+      f.v += ((fl ? 7 : 2) - f.v) * Math.min(1, dt * 3); f.ph += dt * (3 + f.v * 1.5); const nx = f.x + Math.cos(f.a) * f.v * dt, ny = f.y + Math.sin(f.a) * f.v * dt, ni = (ny | 0) * W + (nx | 0);
+      if (nx > 1 && ny > 1 && nx < W - 2 && ny < HH - 2 && kind[ni] === WATER && !ice[ni]) { f.x = nx; f.y = ny; } else f.a += 2.2;
+      const [px, py] = at([f.x, f.y], K), L2 = 5 * f.s * K, W3 = 1.2 * f.s * K, w = Math.sin(f.ph) * 0.35; g.save(); g.translate(px, py); g.rotate(f.a); g.fillStyle = 'rgba(2,10,18,.42)';
+      g.beginPath(); g.moveTo(L2 * 0.55, 0); g.bezierCurveTo(L2 * 0.45, -W3, -L2 * 0.2, -W3 * 0.9, -L2 * 0.45, -W3 * 0.15); g.lineTo(-L2 * 0.45, W3 * 0.15); g.bezierCurveTo(-L2 * 0.2, W3 * 0.9, L2 * 0.45, W3, L2 * 0.55, 0); g.fill();
+      g.translate(-L2 * 0.45, 0); g.rotate(w); g.beginPath(); g.moveTo(0, 0); g.lineTo(-L2 * 0.3, -W3 * 0.7); g.quadraticCurveTo(-L2 * 0.2, 0, -L2 * 0.3, W3 * 0.7); g.closePath(); g.fill(); g.restore(); }
     // the current: faint streaks drifting downstream
     if (LVI.flow) { flowT += dt; const r = rng(3), f = LVI.flow, sp = Math.hypot(f[0], f[1]) * 260; g.lineCap = 'round'; g.lineWidth = Math.max(1, K * 0.14);
       for (let k = 0; k < 80; k++) { const x0 = r() * size, y0 = r() * size, ph = (r() + flowT * 0.25) % 1, x = ((x0 + flowT * sp * K * f[0] / Math.hypot(f[0], f[1])) % size + size) % size, y = y0, l = K * (2 + r() * 3); g.strokeStyle = 'rgba(200,230,255,' + 0.16 * Math.sin(ph * Math.PI) + ')'; g.beginPath(); g.moveTo(x - l, y); g.lineTo(x, y); g.stroke(); } }
@@ -108,7 +133,7 @@ Proto({
       for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3, ex = hx + Math.cos(a) * 16 * K, ey = hy + Math.sin(a) * 16 * K, gr = g.createLinearGradient(hx, hy, ex, ey); gr.addColorStop(0, 'rgba(220,240,255,.75)'); gr.addColorStop(1, 'rgba(220,240,255,0)'); g.strokeStyle = gr; g.beginPath(); g.moveTo(hx, hy); g.lineTo(ex, ey); g.stroke(); } }
     // glow: the ice mask at grid size, blurred and added as light; then the ice itself with a shadow on the water
     if (fresh.length) { const d = mimg.data; for (let i = 0; i < N; i++) { d[i * 4] = 150; d[i * 4 + 1] = 205; d[i * 4 + 2] = 255; d[i * 4 + 3] = ice[i] ? 34 : 0; } mg.putImageData(mimg, 0, 0);
-      g.save(); g.globalCompositeOperation = 'lighter'; g.filter = 'blur(' + (K * 3).toFixed(1) + 'px)'; g.drawImage(mask, 0.25 * SX * K, 0, W * SX * K, size); g.restore(); g.filter = 'none';
+      g.save(); g.globalCompositeOperation = 'lighter'; g.filter = 'blur(' + (K * 3 * (this.zoom || 1)).toFixed(1) + 'px)'; g.drawImage(mask, 0.25 * SX * K, 0, W * SX * K, size); g.restore(); g.filter = 'none';
       g.save(); g.shadowColor = 'rgba(0,10,30,.75)'; g.shadowBlur = K * 1.4; g.shadowOffsetY = K * 0.7; g.globalAlpha = 0.5; g.drawImage(iceC, 0, 0); g.restore();
       g.save(); g.shadowColor = 'rgba(190,230,255,.9)'; g.shadowBlur = K * 0.8; g.drawImage(veinC, 0, 0); g.restore(); }
     // fresh ice flashes as it sets; old ice keeps a slow random glitter
@@ -126,7 +151,17 @@ Proto({
     if (this.state === 'win') { const a = Math.min(1, winT / 2.5), sg = g.createRadialGradient(size * 1.05, size * 0.95, 0, size * 1.05, size * 0.95, size * 1.1); sg.addColorStop(0, 'rgba(255,200,120,' + 0.5 * a + ')'); sg.addColorStop(0.5, 'rgba(255,150,120,' + 0.16 * a + ')'); sg.addColorStop(1, 'rgba(255,150,120,0)'); g.fillStyle = sg; g.fillRect(0, 0, size, size); }
     // lanterns and ducks
     for (const p of LVI.posts) { const [x, y] = at(p, K); Art.lantern(g, x, y, K * 0.95, near(p, 3), now); }
-    for (const d of LVI.ducks || []) { const [x, y] = at(d, K); Art.duck(g, x, y, K * 1.3, now, near(d, 3)); }
+    // ducks paddle slow circles round their spot and leave a V of ripples; a frozen-in duck stays put
+    (LVI.ducks || []).forEach((d, k) => { const [x0, y0] = at(d, K), fz = near(d, 3); if (fz) { Art.duck(g, x0, y0, K * 1.3, now, true); return; }
+      const a = now / 4200 * (k % 2 ? -1 : 1) + k * 2.1, r = K * 1.4, x = x0 + Math.cos(a) * r, y = y0 + Math.sin(a) * r, hd = a + (k % 2 ? -1 : 1) * Math.PI / 2;
+      g.save(); g.strokeStyle = 'rgba(210,235,255,.28)'; g.lineWidth = Math.max(1, K * 0.14); for (let q = 1; q <= 3; q++) { const bx = x - Math.cos(hd) * K * (2 + q * 1.6), by = y - Math.sin(hd) * K * (2 + q * 1.6), sp = K * q * 0.9;
+        g.globalAlpha = 1 - q * 0.28; g.beginPath(); g.moveTo(bx - Math.sin(hd) * sp, by + Math.cos(hd) * sp); g.lineTo(x - Math.cos(hd) * K * 1.6, y - Math.sin(hd) * K * 1.6); g.lineTo(bx + Math.sin(hd) * sp, by - Math.cos(hd) * sp); g.stroke(); }
+      g.globalAlpha = 1; g.translate(x, y); g.rotate(hd); Art.duck(g, 0, 0, K * 1.3, now, false); g.restore(); });
+    // the finale's last touch: frost creeps over the glass of the view from its edges, as dendrites that branch at 60 degrees
+    if (this.state === 'win') { if (!frost || frost.size !== size) frost = makeFrost(size); const R = winT * size * 0.07; g.save(); g.lineCap = 'round';
+      const fc = frost.g; fc.lineCap = 'round'; while (frost.i < frost.segs.length && frost.segs[frost.i].d <= R) { const sg = frost.segs[frost.i++]; fc.strokeStyle = 'rgba(235,246,255,' + (0.5 * sg.w) + ')'; fc.lineWidth = Math.max(0.8, size / 600 * 1.6 * sg.w); fc.beginPath(); fc.moveTo(sg.x1, sg.y1); fc.lineTo(sg.x2, sg.y2); fc.stroke(); }
+      g.drawImage(frost.c, 0, 0);
+      const fg = g.createRadialGradient(size / 2, size / 2, size * 0.42, size / 2, size / 2, size * 0.75); fg.addColorStop(0, 'rgba(220,240,255,0)'); fg.addColorStop(1, 'rgba(220,240,255,' + 0.22 * Math.min(1, winT / 4) + ')'); g.fillStyle = fg; g.fillRect(0, 0, size, size); g.restore(); }
     // the night runs out: the sky warms and a bar counts down to dawn
     const p = Math.min(1, stepN / LVI.dawn), u = size / 600; if (p > 0.5) { const q = (p - 0.5) * 2, sk = g.createLinearGradient(0, 0, size, size); sk.addColorStop(0, 'rgba(255,170,110,' + 0.34 * q * q + ')'); sk.addColorStop(1, 'rgba(255,120,150,0)'); g.fillStyle = sk; g.fillRect(0, 0, size, size); }
     g.fillStyle = 'rgba(4,16,26,.7)'; g.beginPath(); g.roundRect(14 * u, 12 * u, 190 * u, 22 * u, 11 * u); g.fill(); g.fillStyle = 'rgba(255,255,255,.14)'; g.beginPath(); g.roundRect(40 * u, 21 * u, 138 * u, 4 * u, 2 * u); g.fill();

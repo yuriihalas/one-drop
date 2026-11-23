@@ -37,7 +37,9 @@ const LEVELS = [
   { name: 'Близнята', text: 'Дві однакові кімнати, тож нота підходить обом. Звук однієї переходить у другу через двері, і друга підхоплює його. Дзвіночки висять у різних кімнатах; знайдіть місце, звідки задзвенять обидва.',
     rooms: [[6, 24, 45, 63], [46, 42, 51, 45], [52, 24, 91, 63]], mode: [2, 1, 40, 40], bells: [[7, 25], [90, 62]], need: 0.21, best: [52, 25] },
   { name: 'Квадрат', text: 'Кімната квадратна, тож одна нота має тут дві хвилі: одна гойдається зліва направо, друга згори вниз. Камертон посеред стіни розгойдує лише одну з них. Дзвіночки висять посеред двох різних стін; знайдіть місце, звідки задзвенять обидва.',
-    rooms: [[28, 28, 67, 67]], mode: [2, 1, 40, 40], bells: [[47, 29], [29, 47]], need: 0.55, best: [29, 29] }];
+    rooms: [[28, 28, 67, 67]], mode: [2, 1, 40, 40], bells: [[47, 29], [29, 47]], need: 0.55, best: [29, 29] },
+  { name: 'Троє близнят', text: 'Три однакові кімнати в ряд, з\u2019єднані дверима. Звук переходить від кімнати до кімнати, але на кожних дверях слабне. Дзвіночки висять у крайніх кімнатах. Знайдіть місце, звідки задзвенять обидва.',
+    rooms: [[4, 32, 29, 57], [30, 43, 33, 46], [34, 32, 59, 57], [60, 43, 63, 46], [64, 32, 89, 57]], mode: [2, 1, 26, 26], bells: [[5, 33], [88, 56]], need: 0.16, best: [5, 56] }];
 // ---- drawing: a plan of the rooms seen from above. The floor and walls are painted once; the air, the dust and the
 // sound are drawn every frame. Dust is the signature: sound pushes it out of the places where the air moves most and
 // it settles where the air stands still, so the standing wave draws itself on the floor (as in Kundt's tube).
@@ -67,6 +69,7 @@ function fork(g, x, y, K, now, on) { const a = on ? Math.sin(now / 9) * K * 0.18
   g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -K * 1.6); g.stroke(); g.beginPath(); g.moveTo(-K * 0.55 - a, -K * 4.6); g.lineTo(-K * 0.55, -K * 2.1); g.quadraticCurveTo(-K * 0.55, -K * 1.6, 0, -K * 1.6); g.quadraticCurveTo(K * 0.55, -K * 1.6, K * 0.55, -K * 2.1); g.lineTo(K * 0.55 + a, -K * 4.6); g.stroke();
   if (on) { g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = Math.max(1, K * 0.5); g.beginPath(); g.moveTo(-K * 0.55, -K * 4.6); g.lineTo(-K * 0.55, -K * 2.6); g.moveTo(K * 0.55, -K * 4.6); g.lineTo(K * 0.55, -K * 2.6); g.stroke(); }
   g.restore(); }
+let hops = [], motes = [];
 Proto({
   G, levels: LEVELS, speed: 16, slowmo: 0.4, idleText: 'Кімната ледь чутно гуде від протягу: видно, де її повітря гойдається. Поставте камертон туди.',
   build(L) { if (src >= 0 && LVA === L) for (let i = 0; i < G * G; i++) ghost[i] = Math.max(ghost[i] * 0.6, env[i]); else ghost.fill(0); airBuild(L); live = L.bells.map(() => 0); floorKey = ''; ringT = L.bells.map(() => 0); gold = 0;
@@ -75,9 +78,25 @@ Proto({
   step: airStep, verdict: airVerdict,
   winText: () => 'Кімната підхопила ноту, дзвіночки дзвенять. Пил ліг туди, де повітря стоїть.',
   failText: () => 'Дзвіночки ледве ворухнулись (' + peak.map(v => Math.min(99, Math.round(v / LVA.need * 100)) + '%').join(', ') + '). Камертон стояв на тихій лінії або не в тій кімнаті.',
+  // sound: the fork hums a pure tone; as the room picks the note up the hum swells; the bells ring when it sings
+  sfx: { tap(S) { S.tone(1760, 0.08, { gain: 0.05, type: 'triangle' }); }, frame(S, dt, st) { const on = src >= 0 && st !== 'card' && st !== 'idle'; let m = 0; live.forEach(v => { m = Math.max(m, v / LVA.need); }); S.level('fork', on ? 0.025 + 0.09 * Math.min(1, m) : 0, { tone: 440 }); S.level('fork2', on ? 0.012 * Math.min(1, m) : 0, { tone: 880 }); },
+    win(S) { LVA.bells.forEach((b, k) => S.bell(1245 + k * 311, 2.6, 0.07, 0.1 + k * 0.22)); }, lose(S) { } },
+  // the replay camera starts on the fork, then moves to the bell that has begun to ring and stays with it a while
+  focus() { if ((this.slow || 0) < 1.4) return null; let k = -1, m = 0.4; live.forEach((v, i) => { const f = v / LVA.need; if (f > m) { m = f; k = i; } }); return k < 0 ? null : LVA.bells[k]; },
+  hold() { return (this.slow || 0) < 4.5; },
   draw(g, K, now, size) {
-    const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now; const run = src >= 0, win = this.state === 'win'; gold += ((win ? 1 : 0) - gold) * Math.min(1, dt * 1.5);
+    const dt = Math.max(0, Math.min(0.1, (now - lastNow) / 1000)); lastNow = now; const run = src >= 0, win = this.state === 'win'; gold += ((win ? 1 : 0) - gold) * Math.min(1, dt * 1.5);
     const key = size + ':' + LEVELS.indexOf(LVA); if (key !== floorKey) { floorC = paintFloor(size, K); floorKey = key; } g.drawImage(floorC, 0, 0);
+    // a slant of sun from a window in the first room's top wall, and dust motes drifting in it; while the room sings they shiver with its air
+    { const R = LVA.rooms[0], wx0 = (R[0] + (R[2] - R[0]) * 0.3) * K, ww = Math.min(10, (R[2] - R[0]) * 0.25) * K, y0 = R[1] * K, len = Math.min(R[3] - R[1], 26) * K, sk = len * 0.55;
+      g.save(); g.beginPath(); g.rect(R[0] * K, R[1] * K, (R[2] - R[0] + 1) * K, (R[3] - R[1] + 1) * K); g.clip(); g.globalCompositeOperation = 'lighter';
+      const bg2 = g.createLinearGradient(0, y0, 0, y0 + len); bg2.addColorStop(0, 'rgba(255,226,170,.16)'); bg2.addColorStop(1, 'rgba(255,226,170,0)'); g.fillStyle = bg2; g.beginPath(); g.moveTo(wx0, y0); g.lineTo(wx0 + ww, y0); g.lineTo(wx0 + ww + sk, y0 + len); g.lineTo(wx0 + sk, y0 + len); g.closePath(); g.fill();
+      if (motes.length < 46) motes.push({ u: Math.random(), v: Math.random(), p: Math.random() * 6 }); const amp = src >= 0 ? Math.min(1, gold + 0.4) : 0;
+      for (const m of motes) { m.p += dt; m.u += (Math.sin(m.p * 0.7 + m.v * 9) * 0.02) * dt; m.v += (0.012 + Math.cos(m.p * 0.5 + m.u * 7) * 0.02) * dt; if (m.v > 1) m.v -= 1; if (m.u < 0 || m.u > 1) m.u = Math.random();
+        const yy = y0 + m.v * len, xx = wx0 + m.u * ww + m.v * sk + Math.sin(now / 23 + m.p * 40) * K * 0.25 * amp, tw = 0.5 + 0.5 * Math.sin(m.p * 3 + m.u * 20);
+        g.fillStyle = 'rgba(255,240,205,' + (0.55 * tw * (1 - m.v)) + ')'; g.beginPath(); g.arc(xx, yy, Math.max(0.8, K * 0.13), 0, 7); g.fill(); }
+      g.restore(); const wy = (R[1] - 1.4) * K, wh = K * 1.4; g.fillStyle = '#3a2a1c'; g.fillRect(wx0 - K * 0.35, wy - K * 0.3, ww + K * 0.7, wh + K * 0.6); const gg2 = g.createLinearGradient(wx0, 0, wx0 + ww, 0); gg2.addColorStop(0, '#cfe6f5'); gg2.addColorStop(0.5, '#fff3d6'); gg2.addColorStop(1, '#bcd9ee'); g.fillStyle = gg2; g.fillRect(wx0, wy, ww, wh);
+      g.strokeStyle = '#3a2a1c'; g.lineWidth = Math.max(1, K * 0.22); g.beginPath(); g.moveTo(wx0 + ww / 2, wy); g.lineTo(wx0 + ww / 2, wy + wh); g.stroke(); }
     // the air: warm where it is squeezed, cool where it is thinned, faint everywhere else
     let pm = 0.08; for (let i = 0; i < G * G; i++) { const a = P1[i] < 0 ? -P1[i] : P1[i]; if (a > pm) pm = a; }
     const d = img.data; for (let i = 0; i < G * G; i++) { const k = i * 4; if (wall[i]) { d[k + 3] = 0; continue; } const p = P1[i] / pm, e = Math.min(1, (run ? env[i] : ghost[i]) * 0.8);
@@ -101,6 +120,23 @@ Proto({
       if (f >= 1 || win) { ringT[k] += dt; g.save(); g.clip(floorPath); for (let j = 0; j < 4; j++) { const ph = (ringT[k] * 0.6 + j / 4) % 1; g.strokeStyle = 'rgba(255,225,150,' + 0.5 * (1 - ph) + ')'; g.lineWidth = Math.max(1, K * 0.25 * (1 - ph)); g.beginPath(); g.arc(x, y, (3 + ph * 26) * K, 0, 7); g.stroke(); } g.restore();
         const gl = g.createRadialGradient(x, y, 0, x, y, 9 * K); gl.addColorStop(0, 'rgba(255,225,130,.55)'); gl.addColorStop(1, 'rgba(255,225,130,0)'); g.fillStyle = gl; g.fillRect(x - 9 * K, y - 9 * K, 18 * K, 18 * K); }
       g.save(); g.translate(x, y); g.rotate(Math.sin(now / 55) * 0.35 * Math.min(1, a * 2) + (win ? Math.sin(now / 160) * 0.25 : 0)); Art.bell(g, 0, -2.4 * K, K * 1.15, Math.min(1, a * 2 + (win ? 0.6 : 0))); g.restore(); });
+    // a cat asleep in a corner of the first room; when the room sings it wakes, lifts its head and pricks its ears
+    { const R = LVA.rooms[0], c = K * 1.6, aw = Math.min(1, gold * 1.5); let best = null, bd = 0;
+      for (const [qx, qy] of [[R[2] - 4, R[3] - 3.5], [R[0] + 4, R[3] - 3.5], [R[2] - 4, R[1] + 4], [R[0] + 4, R[1] + 4]]) { let d = 99; for (const b of LVA.bells.concat([LVA.best])) d = Math.min(d, Math.hypot(b[0] - qx, b[1] - qy)); if (d > bd) { bd = d; best = [qx, qy]; } }
+      const near = bd < 7, cx = ((best ? best[0] : 0) - 0.2) * K, cy = (best ? best[1] : 0) * K;
+      if (!near && R[2] - R[0] > 14 && R[3] - R[1] > 10) { g.save(); g.translate(cx, cy); g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(c * 0.2, c * 0.3, c * 1.5, c * 1.1, 0, 0, 7); g.fill();
+        const br = 1 + 0.04 * Math.sin(now / 600); g.fillStyle = '#c9823f'; g.beginPath(); g.ellipse(0, 0, c * 1.25 * br, c * 0.95 * br, 0.3, 0, 7); g.fill(); g.strokeStyle = 'rgba(120,60,20,.6)'; g.lineWidth = Math.max(1, c * 0.12); for (let k = -2; k <= 2; k++) { g.beginPath(); g.arc(0, 0, c * (0.45 + 0.13 * (k + 2)), 2.4 + k * 0.1, 3.6 + k * 0.1); g.stroke(); }
+        g.strokeStyle = '#b06f33'; g.lineWidth = c * 0.36; g.lineCap = 'round'; g.beginPath(); const tf = aw ? Math.sin(now / 120) * 0.4 : 0; g.arc(0, 0, c * 1.15, 0.5 + tf, 2.3 + tf); g.stroke();
+        const hx = c * (0.75 + 0.35 * aw), hy = -c * (0.45 + 0.45 * aw); g.fillStyle = '#d48d48'; g.beginPath(); g.arc(hx, hy, c * 0.55, 0, 7); g.fill();
+        for (const sg of [-1, 1]) { g.fillStyle = '#c47a38'; g.beginPath(); g.moveTo(hx + sg * c * 0.42, hy - c * 0.2); g.lineTo(hx + sg * c * (0.42 + 0.1 * aw), hy - c * (0.75 + 0.25 * aw)); g.lineTo(hx + sg * c * 0.05, hy - c * 0.45); g.closePath(); g.fill(); }
+        g.fillStyle = aw ? '#e8f070' : '#5a3818'; for (const sg of [-1, 1]) { g.beginPath(); if (aw) g.arc(hx + sg * c * 0.2, hy - c * 0.05, c * 0.11, 0, 7); else g.ellipse(hx + sg * c * 0.2, hy - c * 0.02, c * 0.13, c * 0.03, 0, 0, 7); g.fill(); } g.restore(); } }
+    // the room sings: where the air swings hardest, grains of dust leap off the floor in time with the note, and the view trembles
+    if (win && run) { this.shake = Math.max(this.shake || 0, 0.1 + 0.06 * Math.sin(now / 90)); g.save(); g.clip(floorPath);
+      for (let k = 0; k < 50; k++) { const i = (Math.random() * G * G) | 0; if (!wall[i] && vam[i] / vmax > 0.4 && hops.length < 260) hops.push({ x: i % G + Math.random(), y: (i / G | 0) + Math.random(), t: 0, v: 0.6 + Math.random() * 0.8 }); }
+      for (const h of hops) { h.t += dt; const T = 0.45 * h.v, ph = (h.t % T) / T, z = 4 * ph * (1 - ph) * h.v * 1.6, fade = Math.min(1, h.t * 3) * Math.max(0, 1 - h.t / 3);
+        g.fillStyle = 'rgba(0,0,0,' + 0.25 * fade + ')'; g.beginPath(); g.ellipse(h.x * K, h.y * K, K * 0.28, K * 0.14, 0, 0, 7); g.fill();
+        g.fillStyle = 'rgba(255,236,190,' + 0.9 * fade + ')'; g.beginPath(); g.arc(h.x * K, (h.y - z) * K, K * 0.3, 0, 7); g.fill(); }
+      hops = hops.filter(h => h.t < 3); g.restore(); } else hops = [];
     if (run) { const x = (src % G + .5) * K, y = (((src / G) | 0) + .5) * K, on = this.state === 'run' || this.state === 'replay' || win;
       if (on) { g.save(); g.clip(floorPath); for (let j = 0; j < 3; j++) { const ph = (now / 700 + j / 3) % 1; g.strokeStyle = 'rgba(255,255,255,' + 0.35 * (1 - ph) + ')'; g.lineWidth = Math.max(1, K * 0.2); g.beginPath(); g.arc(x, y - K, (1.5 + ph * 9) * K, 0, 7); g.stroke(); } g.restore(); }
       fork(g, x, y + K * 1.6, K, now, on);

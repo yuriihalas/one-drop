@@ -41,7 +41,7 @@ kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;paddi
 @media (pointer:coarse){kbd{display:none}}
 </style></head><body><div id="wrap">
 <div id="top"><b id="lvname"></b><span id="lvs"></span></div>
-<div id="stage"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="barx" id="bt"></div><div class="barx" id="bb"></div><div id="rep">ПОВТОР</div><div id="fin"><b id="fint"></b><span id="fins"></span></div>
+<div id="stage"><canvas id="gl"></canvas><canvas id="ov"></canvas><div class="barx" id="bt"></div><div class="barx" id="bb"></div><div id="rep">ПОВТОР · дотик пропускає</div><div id="fin"><b id="fint"></b><span id="fins"></span></div>
 <div id="card"><div><small id="cnum"></small><h2 id="cname"></h2><p id="ctext"></p><button id="clisten">Послухати</button> <button class="go" id="cgo">Почати</button></div></div></div>
 <div id="bar"><div id="msg"></div><button id="listen">Мелодія<kbd>M</kbd></button><button id="hint">Підказка<kbd>H</kbd></button><button id="again">Ще раз<kbd>R</kbd></button><button id="next" class="go">Далі<kbd>N</kbd></button><button id="snd"></button></div>
 <div id="sub">Спроб: <span id="tries">0</span>. Кільця показують, куди піде хвиля: що блідіше кільце, то слабша хвиля. Що більше пунктирне коло на латті, то вища хвиля йому потрібна. Цятки — ваші попередні кидки: що тепліший колір, то ближче було до перемоги.</div>
@@ -50,7 +50,7 @@ kbd{font:inherit;font-size:12px;border:1px solid #5b7d8d;border-radius:5px;paddi
 precision highp float;
 in vec2 v;out vec4 o;
 uniform sampler2D uH;uniform float uT,uF,uTilt,uFin,uBase;uniform vec3 uCP,uCT,uUp;
-uniform vec4 uPond,uB[6],uBar[4];uniform vec3 uLand[2],uRock[3];uniform float uLt[6];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];
+uniform vec4 uPond,uB[6],uBar[4];uniform vec3 uLand[2],uRock[3];uniform float uLt[6];uniform float uReed,uWallW,uNeed;uniform vec3 uWeed[2];uniform vec4 uWall[4];uniform vec4 uDrop;uniform float uFly;uniform vec3 uSun,uTint;uniform float uNight,uRise,uCloudy;uniform vec4 uLeap;uniform vec2 uLeapD;
 const float N=120.;
 float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
@@ -64,17 +64,27 @@ float wallD(vec2 s){return min(min(segd(s,uWall[0]),segd(s,uWall[1])),min(segd(s
 float caus(vec2 p,float t){const float TAU=6.28318;p=mod(p,TAU)-250.;vec2 i=p;float c=1.,k=.005;
 for(int n=0;n<4;n++){float tt=t*(1.-(3.5/float(n+1)));i=p+vec2(cos(tt-i.x)+sin(tt+i.y),sin(tt-i.y)+cos(tt+i.x));c+=1./length(vec2(p.x/(sin(i.x+tt)/k),p.y/(cos(i.y+tt)/k)));}
 c/=4.;c=1.17-pow(c,1.4);return pow(abs(c),8.);}
-vec3 sunCol(){return mix(vec3(1.,.97,.9),vec3(1.,.66,.3),uFin);}
-vec3 sky(vec3 d,vec3 L){float z=max(d.z,0.);
+vec3 sunCol(){return mix(mix(vec3(1.,.97,.9),vec3(1.,.66,.3),uFin),vec3(.62,.72,.92),uNight);}
+vec3 nightSky(vec3 d,vec3 L){float z=max(d.z,0.);vec3 c=mix(vec3(.05,.08,.16),vec3(.01,.02,.06),pow(z,.6));
+vec2 q=d.xy/(z+.15)*55.;vec2 cell=floor(q);float st=step(.972,hash(cell))*smoothstep(.42,0.,length(fract(q)-.5))*(.6+.4*sin(uT*2.+hash(cell+3.)*20.));c+=vec3(.9,.95,1.)*st*smoothstep(.02,.2,z);
+vec2 mw=d.xy/(z+.25);float bd=dot(mw,vec2(.6,.8))-.2,band=exp(-bd*bd*6.);c+=vec3(.16,.17,.24)*band*fbm(mw*3.)*smoothstep(.02,.3,z);float md=dot(d,L);c+=vec3(.9,.94,1.)*smoothstep(.9994,.9997,md)+vec3(.35,.45,.7)*pow(max(md,0.),60.)*.5;return c;}
+vec3 sky(vec3 d,vec3 L){if(uNight>.5)return nightSky(d,L);float z=max(d.z,0.);
 vec3 day=mix(vec3(.8,.88,.97),vec3(.3,.55,.92),pow(z,.5)),eve=mix(vec3(1.,.6,.28),vec3(.26,.28,.55),pow(z,.42));
 vec3 c=mix(day,eve,uFin);
 float cl=smoothstep(.5,.75,fbm(d.xy/(z+.25)*1.3+uT*.01));c=mix(c,mix(vec3(1.),vec3(1.,.72,.55),uFin),cl*.5);
 float sd=max(dot(d,L),0.);c+=sunCol()*pow(sd,22.)*.3*(.4+uFin);return c;}
+// a body of clear water: refracted tint, sky reflection by Fresnel, a sharp sun glint
+vec3 wball(vec3 n,vec3 rd,vec3 L){float F=.04+.96*pow(1.-max(dot(n,-rd),0.),5.);vec3 R=reflect(rd,n);R.z=abs(R.z)+.05;
+vec3 body=vec3(.3,.52,.6)*(.45+.55*max(dot(n,L),0.))+vec3(.75,.9,.95)*pow(max(dot(refract(rd,n,.75),L),0.),6.)*.6;
+return mix(body,sky(normalize(R),L),clamp(F*1.3+.18,0.,1.))+sunCol()*pow(max(dot(R,L),0.),110.)*2.6;}
+// vertical cylinder between z0 and z1
+float cylV(vec3 ro,vec3 rd,vec2 c,float r,float z0,float z1,out vec3 nn){vec2 oc=ro.xy-c;float a=dot(rd.xy,rd.xy),b=dot(oc,rd.xy),cc=dot(oc,oc)-r*r,dd=b*b-a*cc;nn=vec3(0.,0.,1.);if(dd<0.||a<1e-6)return -1.;
+float t=(-b-sqrt(dd))/a,z=ro.z+rd.z*t;if(t<0.||z<z0||z>z1)return -1.;nn=normalize(vec3(oc+rd.xy*t,0.));return t;}
 float sph(vec3 ro,vec3 rd,vec3 c,float r){vec3 oc=ro-c;float b=dot(oc,rd),h=b*b-dot(oc,oc)+r*r;if(h<0.)return -1.;return -b-sqrt(h);}
 void main(){vec2 p=vec2(v.x*2.-1.,1.-v.y*2.);
 vec3 fw=normalize(uCT-uCP),rt=normalize(cross(uUp,fw)),up=cross(fw,rt);
 vec3 rd=normalize(fw*uF+rt*p.x+up*p.y),ro=uCP;
-vec3 L=normalize(mix(vec3(-.45,-.55,.7),vec3(-.16,-.92,.2),uFin)),SC=sunCol();
+vec3 L=normalize(mix(uSun,vec3(-.16,-.92,.2),uFin*(1.-uNight))),SC=sunCol();
 vec3 V=normalize(mix(vec3(0.,.33,1.),-rd,uTilt));
 vec3 col;float tHit=1e9;
 if(rd.z>-1e-4){col=sky(rd,L)+SC*pow(max(dot(rd,L),0.),600.)*6.;}
@@ -86,10 +96,11 @@ vec3 sand=vec3(.86,.78,.6)*(.86+.28*fbm(s*1.3));
 vec3 grass=mix(vec3(.17,.36,.13),vec3(.38,.56,.2),fbm(s*.3))*(.75+.5*noise(s*4.));
 col=mix(sand,grass,smoothstep(.3,.75,tt+(fbm(s*.45)-.5)*.6));
 if(uReed<.5){float st=smoothstep(-3.6,-.2,sh+(noise(s*.7)-.5)*1.6);vec2 gc=floor(s*.55+vec2(0.,floor(s.x*.55)*.5));vec3 stc=vec3(.6,.58,.54)*(.62+.5*hash(gc))*(.8+.3*fbm(s*2.));col=mix(col,stc,st);}
-col*=mix(.66,1.,smoothstep(0.,1.8,-sh));col*=mix(vec3(1.),vec3(1.05,.8,.62),uFin);}
+col*=mix(.66,1.,smoothstep(0.,1.8,-sh));col*=mix(vec3(1.),vec3(1.05,.8,.62),uFin*(1.-uNight));col*=1.-.32*uNight;}
 else{float h=H(s),e=.75;float hx=H(s+vec2(e,0))-H(s-vec2(e,0)),hy=H(s+vec2(0,e))-H(s-vec2(0,e));
-vec2 a=vec2(noise(s*.8+vec2(uT*.55,0.))-.5,noise(s*.8+vec2(5.,uT*.45))-.5)*.05+(vec2(noise(s*2.6-uT*.9),noise(s*2.6+uT*.8+9.))-.5)*.02;
-vec3 n=normalize(vec3(-hx*19.-a.x*.6,-hy*19.-a.y*.6,1.));
+vec2 a=vec2(noise(s*.8+vec2(uT*.55,0.))-.5,noise(s*.8+vec2(5.,uT*.45))-.5)*.05+(vec2(noise(s*2.6-uT*.9),noise(s*2.6+uT*.8+9.))-.5)*.02;float gust=smoothstep(.55,.85,fbm(s*.06+vec2(uT*.035,uT*.02)));a+=(vec2(noise(s*4.1+uT*2.3),noise(s*4.1-uT*2.1+3.))-.5)*.09*gust; // cat's paws: patches of wind ripple that drift across the pond
+float slope=clamp(length(vec2(hx,hy))*55.,0.,1.);vec2 cg=vec2(noise(s*5.3+vec2(uT*2.1,0.))-noise(s*5.3+vec2(uT*2.1+.37,0.)),noise(s*5.3+vec2(0.,uT*1.8))-noise(s*5.3+vec2(.37,uT*1.8)))*slope*.9; // capillary ripples riding on the wave's slopes
+vec3 n=normalize(vec3(-hx*19.-a.x*.6-cg.x,-hy*19.-a.y*.6-cg.y,1.));
 float dep=depthAt(s);vec2 sb=s+n.xy*(2.+11.*dep)+rd.xy/max(-rd.z,.15)*dep*3.*uTilt;if(shore(sb)<.3)sb=s;
 vec3 bt=vec3(.86,.78,.6)*(.8+.32*fbm(sb*.8));
 bt*=.92+.08*sin(sb.x*1.5+sin(sb.y*.45)*2.+fbm(sb*.3)*6.);
@@ -103,7 +114,11 @@ col+=mix(vec3(.85,.95,1.),vec3(1.,.85,.6),uFin)*smoothstep(.02,.09,h)*.32;
 vec2 so=-normalize(L.xy)*(.6+uFin*1.4);
 col*=mix(.6,1.,smoothstep(-.3,1.5,wallD(s-so*2.5)));
 for(int i=0;i<3;i++){float ds=length(s-uRock[i].xy-so*uRock[i].z);col*=mix(.6,1.,smoothstep(uRock[i].z*.9,uRock[i].z*1.2,ds));}
-for(int i=0;i<6;i++){float dg=length(s-uB[i].xy);col+=vec3(1.,.55,.12)*exp(-dg*dg/60.)*uFin*uB[i].w*(.45+.15*sin(uT*5.+float(i)));}
+for(int i=0;i<6;i++){float dg=length(s-uB[i].xy);col+=vec3(1.,.55,.12)*exp(-dg*dg/60.)*uFin*uB[i].w*(.45+.15*sin(uT*5.+float(i)));
+// a glitter path: on rippled water the glow of a lit lily is mirrored by every facet that tilts toward the camera, so it stretches into a broken streak running toward the viewer
+vec2 dl=normalize(uCP.xy-uB[i].xy+1e-3),q=s-uB[i].xy;float al=dot(q,dl),ac=dot(q,vec2(-dl.y,dl.x)),wd=1.1+al*.09;
+float gl=smoothstep(.55,1.,.5+.5*sin(al*2.1-uT*3.1+n.x*26.+float(i)))*.8+.2;
+col+=vec3(1.,.62,.22)*uFin*uTilt*uB[i].w*gl*exp(-ac*ac/(wd*wd))*smoothstep(uNeed+.4,uNeed+2.5,al)*exp(-al/26.)*(.55+.45*uNight);}
 float F=.03+.97*pow(1.-max(dot(n,V),0.),5.);
 vec3 R=reflect(-V,n);R.z=abs(R.z);
 col=mix(col,sky(R,L),clamp(F*1.3,0.,.92));
@@ -112,7 +127,9 @@ float fo=smoothstep(1.7,0.,sh+(noise(s*1.6+uT*.35)-.5)*1.5+sin(uT*1.4+s.x*.3+s.y
 vec3 TN=mix(vec3(1.),vec3(1.08,.84,.66),uFin*.7);
 for(int i=0;i<2;i++){float dw=length(s-uWeed[i].xy)-uWeed[i].z+1.+(fbm(s*.45+float(i)*7.)-.5)*4.5;
 float m=smoothstep(1.2,-1.8,dw)*smoothstep(.3,.52,noise(s*2.7+n.xy*3.)+noise(s*6.9)*.4);
-vec3 wc=mix(vec3(.17,.4,.09),vec3(.52,.74,.2),noise(s*5.3+3.))*(.72+.45*max(dot(n,L),0.))*TN;col=mix(col,wc,m*.93);}
+vec3 wc=mix(vec3(.17,.4,.09),vec3(.52,.74,.2),noise(s*5.3+3.))*(.72+.45*max(dot(n,L),0.))*TN;
+vec2 fg=floor(s*1.9),fq=fract(s*1.9)-.5-(vec2(hash(fg+1.3),hash(fg+5.9))-.5)*.4;float fr=smoothstep(.36,.2,length(fq))*smoothstep(.7,.35,fwidth(s.x)*1.9); // single duckweed fronds, domed: lit on the sun side, dark seams between them
+wc*=(.78+.3*fr)*(1.+.9*fr*dot(fq,normalize(L.xy+1e-4)));col=mix(col,wc,m*.93);}
 if(uReed>.5){float rb=smoothstep(10.5,3.5,sh+(fbm(s*.55)-.5)*4.);col*=1.-rb*.22;
 vec2 gg=floor(s*1.25);vec2 cc=(gg+.5+(vec2(hash(gg+3.1),hash(gg+7.7))-.5)*.75)/1.25;vec2 q=s-cc-vec2(sin(uT*1.3+gg.x)*.06,0.);
 float dd=length(vec2(q.x+q.y*.35,q.y*.42));float stalk=smoothstep(.36,.14,dd)*step(1.02-rb*.9,hash(gg+.37));
@@ -120,8 +137,13 @@ col=mix(col,mix(vec3(.13,.27,.07),vec3(.5,.58,.22),hash(gg+1.7))*(.8+.4*max(dot(
 for(int i=0;i<6;i++){vec2 q=s-uB[i].xy;float sc=1.+clamp(H(uB[i].xy)*2.4,-.12,.32);float r=length(q)/sc;if(r<uNeed+1.6){float a=atan(q.y,q.x),w=uB[i].z,lit=uB[i].w;
 float notch=smoothstep(.05,.2,abs(a-(float(i)*1.3-2.))-.02);
 float pad=smoothstep(uNeed+.8,uNeed+.55,r)*notch;
-vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/(uNeed+.8))*(.65+.55*max(dot(n,L),0.))*TN*(.9+.5*(sc-1.));
+// the leaf is not flat: its lip curls up, it casts a soft shadow on the water away from the sun, radial veins run from the stem, and the sunny lip glints wet
+float rs=length(q+normalize(L.xy+1e-4)*.55)/sc;col*=1.-.3*(1.-pad)*smoothstep(uNeed+1.25,uNeed+.6,rs)*(1.-uNight*.7);
+float rim=smoothstep(uNeed-.1,uNeed+.7,r),tl=dot(q/max(length(q),1e-3),normalize(L.xy+1e-4))*rim;
+float vein=smoothstep(.09,0.,abs(fract(a*1.751+.5)-.5)*6.283*r)*smoothstep(.2,.7,r)*(1.-rim);
+vec3 pc=mix(vec3(.11,.38,.15),vec3(.27,.56,.2),.5+.5*cos(a*11.))*(.7+.4*r/(uNeed+.8))*(.65+.55*max(dot(n,L),0.))*TN*(.9+.5*(sc-1.))*(1.+.4*tl)*(1.-.2*vein);
 col=mix(col,pc,pad*.97);
+col+=SC*pad*pow(max(tl,0.),4.)*.3;
 col=mix(col,vec3(1.,1.,.95),(1.-lit)*.95*smoothstep(.24,.06,abs(length(q)-uNeed))*step(.45,fract(a*3.82)));
 float ro2=1.15+(uNeed-1.25)*w,l1=.5+.5*pow(abs(cos(a*4.)),.55),l2=.5+.5*pow(abs(sin(a*4.)),.55);
 float p1=smoothstep(ro2*l1,ro2*l1-.28,r);vec3 c1=mix(vec3(1.,.96,.95),vec3(.96,.5,.7),smoothstep(0.,ro2,r))*(.82+.18*smoothstep(ro2*l1,ro2*l1*.6,r));
@@ -131,6 +153,7 @@ col=mix(col,c2*TN,p2);
 float cr=.3+.6*min(w,1.);col=mix(col,mix(vec3(.9,.62,.16),vec3(1.,.86,.32),lit),smoothstep(cr,cr-.18,r)*smoothstep(.2,.55,w));
 col+=vec3(.42,.26,.06)*lit*(.6+uFin)*smoothstep(uNeed+.3,0.,r)*(.75+.25*sin(uT*5.+float(i)));}}
 }
+col*=1.-.2*uCloudy*smoothstep(.48,.72,fbm(s*.025+vec2(uT*.012,uT*.006))); // shadows of clouds drifting over the pond on a cool day
 float fd=length(s-60.);col=mix(col,sky(normalize(vec3(rd.xy,.02)),L),smoothstep(110.,700.,fd)*uTilt);}
 // reeds as standing stalks: each stalk is a vertical line, tested against the ray's footprint on the water
 if(uReed>.5&&uTilt>.02&&rd.z<-1e-4){float t0=-ro.z/rd.z;vec2 s0=(ro+rd*t0).xy,dz=rd.xy/rd.z;float sa=shore(s0),sc2=shore(s0+dz*6.);
@@ -158,10 +181,37 @@ col=base*(.3+.9*max(dot(n,L),0.))*mix(vec3(1.),vec3(1.15,.8,.55),uFin)+SC*pow(ma
 if(rd.z<-1e-4){for(int k=0;k<6;k++){float zz=2.5-float(k)*.5,tk=(zz-ro.z)/rd.z;if(tk>tHit)break;vec2 s=(ro+rd*tk).xy;if(wallD(s)<0.&&shore(s)>-3.){
 vec2 gc=floor(vec2(s.x*.4+floor(s.y*.7)*.5,s.y*.7));vec3 base=vec3(.6,.58,.54)*(.7+.35*hash(gc))*(.82+.3*fbm(s*1.9));
 col=base*(k==0?.72+.4*max(L.z,0.):.5)*mix(vec3(1.),vec3(1.15,.8,.55),uFin);tHit=tk;break;}}}
+// slow-motion impact of the replay drop: the falling drop, a crown of droplets thrown out and up,
+// the Worthington jet that rises as the crater closes, and the drop that pinches off its tip and falls back.
+// Gravity here is 30 units/s^2 of impact time; the jet peaks at 0.53 s and the pinched drop lands at 1.33 s.
+if(uDrop.w>.5){vec2 c=uDrop.xy;float td=uDrop.z,hw=H(c)*15.*uTilt,th;vec3 nn;
+if(td<0.){vec3 pc=vec3(c,max(hw,0.)-td*26.+.9);th=sph(ro,rd,pc,1.25);if(th>0.&&th<tHit){tHit=th;col=wball(normalize(ro+rd*th-pc),rd,L);}}
+else{for(int k=0;k<16;k++){float fk=float(k),a=fk*.3927+hash(vec2(fk,3.))*.25,vh=6.+5.*hash(vec2(fk,7.)),vz=8.+6.*hash(vec2(fk,11.));
+float z=vz*td-15.*td*td;if(z<-.4)continue;float rr=.36+.26*hash(vec2(fk,5.));vec3 pc=vec3(c+vec2(cos(a),sin(a))*(1.6+vh*td),z+rr*.5);
+th=sph(ro,rd,pc,rr);if(th>0.&&th<tHit){tHit=th;col=wball(normalize(ro+rd*th-pc),rd,L);}}
+float tj=td-.18;if(tj>0.&&tj<.7){float hj=6.8*sin(3.14159*tj/.7),rj=.5+.42*(1.-tj/.7),zb=min(hw,0.)-1.;
+if(hj>.3){th=cylV(ro,rd,c,rj,zb,hj,nn);if(th>0.&&th<tHit){tHit=th;col=wball(nn,rd,L);}
+for(int m=1;m<4;m++){float fm=float(m);th=cylV(ro,rd,c,rj*(1.+fm*.45),zb,hj*(.42-fm*.11),nn);if(th>0.&&th<tHit){tHit=th;col=wball(nn,rd,L);}}
+if(tj<.35){vec3 pc=vec3(c,hj);th=sph(ro,rd,pc,rj*1.5);if(th>0.&&th<tHit){tHit=th;col=wball(normalize(ro+rd*th-pc),rd,L);}}}}
+float tp=td-.53;if(tp>0.){float z=7.4+3.*tp-15.*tp*tp;if(z>-.6){vec3 pc=vec3(c,z);th=sph(ro,rd,pc,1.);if(th>0.&&th<tHit){tHit=th;col=wball(normalize(ro+rd*th-pc),rd,L);}}}}}
+// a fish leaping at dusk: a ballistic arc out of the water and back, its body pitched along the arc, silver on the back and white below
+if(uLeap.w>.5){float sl=uLeap.z,hz=4.*8.*sl*(1.-sl),dz=4.*8.*(1.-2.*sl)/16.,pt=atan(dz,1.);vec2 c=uLeap.xy+uLeapD*16.*sl;vec3 ax=normalize(vec3(uLeapD*cos(pt),sin(pt)));
+for(int k=0;k<6;k++){float fk=float(k),off=(fk-2.2)*.62,rr=fk==5.?.34:.45+.72*sin(3.14159*(fk+.6)/5.6);vec3 pc=vec3(c,hz+.4)+ax*off*2.4;if(k==5)pc-=ax*.45;float th=sph(ro,rd,pc,rr);
+if(th>0.&&th<tHit){tHit=th;vec3 n=normalize(ro+rd*th-pc);float up=n.z;vec3 base=mix(vec3(.93,.94,.9),mix(vec3(.4,.5,.42),vec3(.72,.76,.74),.5+.5*sin(off*3.)),smoothstep(-.2,.3,up));
+vec3 R=reflect(rd,n);col=base*(.35+.75*max(dot(n,L),0.))*mix(vec3(1.),vec3(1.12,.86,.62),uFin)+SC*pow(max(dot(R,L),0.),40.)*.9+sky(normalize(vec3(R.xy,abs(R.z)+.05)),L)*.12;}}}
+// the very last pond: paper sky lanterns lift off every lily and drift up into the night, swaying, warm, slowly fading
+if(uRise>0.){for(int i=0;i<6;i++){if(uB[i].w<.5)continue;for(int k=0;k<3;k++){float sd=float(i*3+k),t0=hash(vec2(sd,9.))*3.,tt=uRise-t0;if(tt<0.)continue;
+vec3 lp=vec3(uB[i].xy+vec2(sin(tt*.5+sd)*1.5+tt*.9,cos(tt*.4+sd)*1.2-tt*.5),1.5+tt*2.6*(.7+.5*hash(vec2(sd,4.))));vec3 q=lp-ro;float tb=dot(q,rd);if(tb<0.||tb>tHit+2.)continue;
+float d=length(q-rd*tb),px2=tb*.004+.25,fade=exp(-tt/14.)*min(1.,tt*2.),fl=.85+.15*sin(uT*9.+sd*3.);col+=(vec3(1.,.62,.25)*exp(-d*d/(px2*px2))*1.4+vec3(1.,.5,.2)*exp(-d*d/(px2*px2*20.))*.35)*fade*fl;}}}
+// fireflies over the opened lilies at dusk
+if(uFly>.01){for(int i=0;i<6;i++){if(uB[i].w<.5)continue;for(int k=0;k<5;k++){float sd=float(i*5+k);
+vec3 fp=vec3(uB[i].xy+vec2(sin(uT*.61+sd*2.1),cos(uT*.47+sd*1.3))*(3.+6.*hash(vec2(sd,1.))),1.5+5.*hash(vec2(sd,2.))+sin(uT*.83+sd)*1.1);
+vec3 q=fp-ro;float tb=dot(q,rd);if(tb<0.||tb>tHit+2.)continue;float d=length(q-rd*tb),px2=tb*.006+.05,bl=.25+.75*pow(.5+.5*sin(uT*2.3+sd*4.1),3.);
+col+=vec3(1.,.86,.4)*(exp(-d*d/(px2*px2))*2.4+exp(-d*d/(px2*px2*25.))*.4)*uFly*bl;}}}
 for(int i=0;i<6;i++){if(uB[i].w>.5){vec2 c=uB[i].xy;float dd=dot(rd.xy,rd.xy)+1e-5,tb=dot(c-ro.xy,rd.xy)/dd,zb=ro.z+rd.z*tb,d=length(ro.xy+rd.xy*tb-c),lt=uLt[i],hg=9.+34.*exp(-lt*1.3);
 float g=exp(-d*d/(1.2+2.5*exp(-lt*3.)))*smoothstep(0.,1.5,zb)*exp(-max(zb,0.)/hg)*step(0.,tb)*step(tb,tHit+3.);
 col+=vec3(1.,.78,.35)*g*(.55+1.6*exp(-lt*2.))*uTilt;}}
-col*=1.-uFin*.35*smoothstep(.5,1.4,length(p));
+col*=mix(uTint,vec3(1.),uFin*(1.-uNight));col*=1.-uFin*.35*smoothstep(.5,1.4,length(p));
 o=vec4(col,1.);}
 </script>
 <script>
@@ -263,11 +313,31 @@ const stage=$('stage'),glc=$('gl'),ov=$('ov'),g=ov.getContext('2d'),finEl=$('fin
 const gl=glc.getContext('webgl2',{antialias:false});
 const say=t=>$('msg').textContent=t;
 const SPEED=150,LAST=LEVELS.length-1;
+// every ten ponds have their own hour, and the last ten lie under the moon: the sun stands elsewhere, so shadows and glints move, and the light changes colour
+const MOODS=[{sun:[-.45,-.55,.7],tint:[1,1,1]},{sun:[.5,-.45,.62],tint:[1.03,1,.93]},{sun:[-.25,.55,.72],tint:[.93,.97,1.02],cloudy:1},{sun:[.62,.28,.55],tint:[1.06,.96,.86]},{sun:[-.35,.4,.62],tint:[.68,.76,.98],night:1}];
 let lvI=0,T=0.068,state='card',tries=0,marks=[],splash=null,hintLv=0,acc=0,last=performance.now(),size=600;
 let camK=0,camGoal=0,camDur=1.8,theta=0,finT=0,ringT=0,tscale=1,fin=0,finGoal=0,phase='',dropAt=null;
 let disp=[0,0,0,0,0,0],wasLit=[0,0,0,0,0,0],bursts=[],litOrder=[],closing=false;
-let specks=[],fall=null,spray=[];
-function seed(){specks=[];let g2=0;while(specks.length<150&&g2++<4000){const x=2+Math.random()*(N-4),y=2+Math.random()*(N-4);if(!blk[(y|0)*N+(x|0)])specks.push({x,y,hx:x,hy:y})}}
+let ringlets=[],fly1=null,leap=null,leapT=0,fish=[],fishT=0,specks=[],fall=null,spray=[],dropT=-1,dropOn=0,foc=0,focGoal=0,fly=0,flyGoal=0,relanded=0;
+// pond life: two or three fish glide under the surface, turn away from stone and shore, and dart off when a drop lands near them
+function seedFish(){fish=[];const n=2+(lvI%2);let g2=0;while(fish.length<n&&g2++<500){const x=8+Math.random()*(N-16),y=8+Math.random()*(N-16);if(!blk[(y|0)*N+(x|0)]&&dep[(y|0)*N+(x|0)]>.5)fish.push({x,y,a:Math.random()*6.283,v:2.2,s:.85+Math.random()*.4,ph:Math.random()*6,flee:0})}}
+function swim(dt){const free=(x,y)=>x>2&&y>2&&x<N-3&&y<N-3&&!blk[(y|0)*N+(x|0)]&&dep[(y|0)*N+(x|0)]>.35;
+for(const f of fish){if(splash&&splash.t<.3){const dx=f.x-splash.x,dy=f.y-splash.y,d=Math.hypot(dx,dy);if(d<16&&f.flee<=0){f.flee=1.4;f.a=Math.atan2(dy,dx)+(Math.random()-.5)*.6}}
+f.flee-=dt;const sp=f.flee>0?12*Math.min(1,f.flee):2.2;f.v+=(sp-f.v)*Math.min(1,dt*(f.flee>0?8:1.5));f.ph+=dt*(3+f.v*1.6);
+f.a+=Math.sin(f.ph*.13+f.s*9)*dt*.5;for(let k=0;k<12;k++){const lx=f.x+Math.cos(f.a)*5,ly=f.y+Math.sin(f.a)*5;if(free(lx,ly))break;f.a+=.45*(f.s>1?1:-1)}
+const nx=f.x+Math.cos(f.a)*f.v*dt,ny=f.y+Math.sin(f.a)*f.v*dt;if(free(nx,ny)){f.x=nx;f.y=ny}else f.a+=Math.PI*.6}}
+// a dragonfly: hovers, darts to a new spot in a quick straight line, now and then rests on a lily leaf; its wings are a shimmering blur
+function dragon(dt,K,px,now){if(!fly1)fly1={x:60,y:30,tx:60,ty:30,h:0,a:0,rest:0};const d=fly1;d.h-=dt;
+if(d.h<=0){const onLeaf=BUOYS.length&&Math.random()<.35,b=onLeaf?BUOYS[Math.floor(Math.random()*BUOYS.length)]:null;d.tx=b?b[0]+2.5:10+Math.random()*100;d.ty=b?b[1]-1.5:10+Math.random()*100;d.rest=b?1:0;d.h=(b?3:1)+Math.random()*2.5}
+const dx=d.tx-d.x,dy=d.ty-d.y,dist=Math.hypot(dx,dy);if(dist>.3){const v=Math.min(dist,dt*45);d.x+=dx/dist*v;d.y+=dy/dist*v;d.a=Math.atan2(dy,dx)}else{d.x+=Math.sin(now/300)*.01;d.y+=Math.cos(now/370)*.01}
+const flying=dist>.3||!d.rest,x=(d.x+.5)*K,y=(d.y+.5)*K,s=K*.9;g.save();if(flying){g.fillStyle='rgba(0,0,0,.18)';g.beginPath();g.ellipse(x+2*s,y+3*s,2*s,.5*s,d.a,0,7);g.fill()}
+g.translate(x,y);g.rotate(d.a);g.fillStyle=flying?'rgba(220,240,255,.28)':'rgba(220,240,255,.5)';const fl=flying?.65+.35*Math.sin(now/12):1;
+for(const sg of[-1,1])for(const off of[.35,-.25]){g.beginPath();g.ellipse(off*s,sg*1.1*s*fl,.32*s,1.15*s*fl,sg*(off>0?.25:-.2),0,7);g.fill()}
+g.strokeStyle='#2f6f8f';g.lineWidth=Math.max(1.2,.3*s);g.lineCap='round';g.beginPath();g.moveTo(.6*s,0);g.lineTo(-2.2*s,0);g.stroke();g.fillStyle='#1f4a66';g.beginPath();g.arc(.85*s,0,.32*s,0,7);g.fill();g.restore()}
+function drawFish(K,px){for(const f of fish){const L=5.6*f.s*K,W2=1.3*f.s*K,w=Math.sin(f.ph)*.35;g.save();g.translate((f.x+.5)*K,(f.y+.5)*K);g.rotate(f.a);g.fillStyle='rgba(4,14,20,.48)';
+g.beginPath();g.moveTo(L*.55,0);g.bezierCurveTo(L*.45,-W2,-L*.2,-W2*.9,-L*.45,-W2*.15*(1+w));g.lineTo(-L*.45,W2*.15*(1-w));g.bezierCurveTo(-L*.2,W2*.9,L*.45,W2,L*.55,0);g.fill();
+g.translate(-L*.45,0);g.rotate(w);g.beginPath();g.moveTo(0,0);g.lineTo(-L*.32,-W2*.75);g.quadraticCurveTo(-L*.22,0,-L*.32,W2*.75);g.closePath();g.fill();g.restore()}}
+function seed(){seedFish();specks=[];let g2=0;while(specks.length<150&&g2++<4000){const x=2+Math.random()*(N-4),y=2+Math.random()*(N-4);if(!blk[(y|0)*N+(x|0)])specks.push({x,y,hx:x,hy:y})}}
 let hover=null,isDown=false,tt=null,ttKey='',lastRes=null,stars=0,lastJ=null;
 const PITCH={466.16:'#ff8fc0',440:'#ffd95a',392:'#6fc3ff',311.13:'#c79bff',261.63:'#ff7b6b',293.66:'#5fe0d0',329.63:'#8fe08a',349.23:'#ffab5e'};
 function note(f,t0){tone(f,t0||0,1.2,0.13);tone(f*2,t0||0,0.6,0.03)}
@@ -279,6 +349,10 @@ function au(){if(muted)return null;if(!AC){const C=window.AudioContext||window.w
 function tone(f,t0,dur,vol,type){const a=au();if(!a)return;const t=a.currentTime+t0,o=a.createOscillator(),gn=a.createGain();o.type=type||'sine';o.frequency.setValueAtTime(f,t);gn.gain.setValueAtTime(0.0001,t);gn.gain.exponentialRampToValueAtTime(vol,t+0.015);gn.gain.exponentialRampToValueAtTime(0.0001,t+dur);o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+dur+0.05)}
 function plop(){const a=au();if(!a)return;const t=a.currentTime,o=a.createOscillator(),gn=a.createGain();o.frequency.setValueAtTime(540,t);o.frequency.exponentialRampToValueAtTime(105,t+0.17);gn.gain.setValueAtTime(0.0001,t);gn.gain.exponentialRampToValueAtTime(0.3,t+0.012);gn.gain.exponentialRampToValueAtTime(0.0001,t+0.32);o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+0.35)}
 const NOTES=[523.25,659.25,783.99,987.77];
+// night ponds: crickets chirp quietly, a few trills now and then, never on the card
+let crickT=0;function crickets(dt){if(muted||!MOODS[Math.floor(lvI/10)%MOODS.length].night||state==='card'||!AC)return;crickT-=dt;if(crickT>0)return;crickT=0.6+Math.random()*1.8;const f=4200+Math.random()*900,n=3+Math.floor(Math.random()*3);for(let k=0;k<n;k++)tone(f,k*0.07,0.045,0.012)}
+// the same plop slowed down for the replay: an octave lower and four times longer, as a slow-motion film would play it
+function plopSlow(){const a=au();if(!a)return;const t=a.currentTime,o=a.createOscillator(),gn=a.createGain();o.frequency.setValueAtTime(270,t);o.frequency.exponentialRampToValueAtTime(52,t+0.7);gn.gain.setValueAtTime(0.0001,t);gn.gain.exponentialRampToValueAtTime(0.32,t+0.05);gn.gain.exponentialRampToValueAtTime(0.0001,t+1.3);o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+1.35)}
 function chime(k){tone(NOTES[k%4],0,1.3,0.11);tone(NOTES[k%4]*2,0,0.7,0.035)}
 function sndLabel(){$('snd').textContent=muted?'Звук вимкнено':'Звук увімкнено'}
 function resize(){const css=Math.max(240,Math.min(innerWidth-24,innerHeight-(innerWidth<600?330:190),900)),dpr=Math.min(devicePixelRatio||1,2);stage.style.width=stage.style.height=css+'px';size=Math.round(css*dpr);glc.width=glc.height=ov.width=ov.height=size;if(gl)gl.viewport(0,0,size,size)}
@@ -288,7 +362,7 @@ if(!gl){say('Цей браузер не підтримує WebGL2, тому во
 const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s};
 prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,'#version 300 es\nout vec2 v;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2))*2.-1.;v=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}'));
 gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,$('fs').textContent));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))console.error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
-for(const n of['uT','uB','uF','uTilt','uFin','uCP','uCT','uUp','uPond','uLand','uRock','uBar','uBase','uLt','uReed','uWeed','uWall','uWallW','uNeed'])U_[n]=gl.getUniformLocation(prog,n);
+for(const n of['uT','uB','uF','uTilt','uFin','uCP','uCT','uUp','uPond','uLand','uRock','uBar','uBase','uLt','uReed','uWeed','uWall','uWallW','uNeed','uDrop','uFly','uSun','uTint','uLeap','uLeapD','uNight','uRise','uCloudy'])U_[n]=gl.getUniformLocation(prog,n);
 tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texStorage2D(gl.TEXTURE_2D,1,gl.R16F,N,N);
 gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 gl.bindVertexArray(gl.createVertexArray())}
@@ -299,25 +373,25 @@ paintLv();$('lvname').textContent=(i+1)+'. '+L.name;
 if(gl){gl.uniform4f(U_.uPond,...L.pond);const ld=new Float32Array([-999,-999,0,-999,-999,0]);(L.lands||[]).forEach((a,k)=>ld.set(a,k*3));gl.uniform3fv(U_.uLand,ld);
 const rk=new Float32Array([-999,-999,0,-999,-999,0,-999,-999,0]);(L.rocks||[]).forEach((a,k)=>rk.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uRock,rk);
 const br=new Float32Array([0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1]);(L.bars||[]).forEach((a,k)=>br.set(a,k*4));gl.uniform4fv(U_.uBar,br);gl.uniform1f(U_.uBase,L.base);
-gl.uniform1f(U_.uReed,L.reeds?1:0);gl.uniform1f(U_.uNeed,2.2+3.4*Math.sqrt(L.T/0.18));const wd=new Float32Array([-999,-999,0,-999,-999,0]);(L.weeds||[]).forEach((a,k)=>wd.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uWeed,wd);
+gl.uniform1f(U_.uReed,L.reeds?1:0);gl.uniform1f(U_.uNeed,2.2+3.4*Math.sqrt(L.T/0.18));{const m=MOODS[Math.floor(lvI/10)%MOODS.length];gl.uniform3fv(U_.uSun,m.sun);gl.uniform3fv(U_.uTint,m.tint);gl.uniform1f(U_.uNight,m.night?1:0);gl.uniform1f(U_.uCloudy,m.cloudy?1:0)}const wd=new Float32Array([-999,-999,0,-999,-999,0]);(L.weeds||[]).forEach((a,k)=>wd.set([a[0]+.5,a[1]+.5,a[2]],k*3));gl.uniform3fv(U_.uWeed,wd);
 const wl=new Float32Array(16).fill(-999);(L.walls||[]).forEach((a,k)=>wl.set([a[0]+.5,a[1]+.5,a[2]+.5,a[3]+.5],k*4));gl.uniform4fv(U_.uWall,wl);gl.uniform1f(U_.uWallW,L.walls?L.walls[0][4]:1)}
 $('listen').style.display=$('clisten').style.display=L.tune?'inline-block':'none';
-seed();reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length;$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
+seed();reset();if(L.nocard){state='idle';card.classList.remove('on');idleText()}else{state='card';$('cnum').textContent='РІВЕНЬ '+(i+1)+' З '+LEVELS.length+' · '+['РАНОК','ПОЛУДЕНЬ','ПРОХОЛОДНИЙ ДЕНЬ','ПООБІДДЯ','НІЧ'][Math.floor(i/10)%5];$('cname').textContent=L.name;$('ctext').textContent=L.lesson;card.classList.add('on')}}
 function begin(){if(state!=='card')return;card.classList.remove('on');state='idle';idleText()}
 function idleText(){if(LEVELS[lvI].tune){say('Знайдіть місце, звідки хвиля торкнеться латать у порядку мелодії. Порядок кольорів і ритм показано вгорі в рядку «треба».');return}say(lvI===0&&!tries?'Торкніться води біля латаття: упаде крапля, і хвиля його розкриє.':'Киньте одну краплю. Що вища хвиля дійде до латаття, то ширше воно розкриється. Розкрийте всі до пунктирної межі.')}
-function reset(){simReset();if(state!=='card')state='idle';splash=null;fall=null;spray=[];wasLit=[0,0,0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;lastRes=null;lastJ=null;
+function reset(){simReset();if(state!=='card')state='idle';splash=null;fall=null;spray=[];wasLit=[0,0,0,0,0,0];bursts=[];litOrder=[];closing=false;phase='';camGoal=0;camDur=0.7;finGoal=0;tscale=1;dropAt=null;dropOn=0;dropT=-1;focGoal=0;foc=0;flyGoal=0;fly=0;leap=null;leapT=0;lastRes=null;lastJ=null;
 stage.classList.remove('fin');finEl.classList.remove('on');$('rep').classList.remove('on');$('next').style.display='none';if(state==='idle'){idleText();if(hintLv)showHint()}}
 function showHint(){if(hintLv===1)say('Підказка 1: '+LEVELS[lvI].lesson);
 if(hintLv===2)say('Підказка 2: шукайте місце всередині жовтого кола.');
 if(hintLv>=3)say('Підказка 3: точне місце позначено жовтою цяткою.')}
 function hint(){if(state==='card')return;if(hintLv<3)hintLv++;if(state!=='idle')reset();showHint()}
 function startFall(x,y){fall={x,y,t:0};state='fall';say('Крапля падає…')}
-function drop(x,y){fall=null;spray=[];for(let k=0;k<14;k++){const a=Math.random()*6.283,v=18+Math.random()*30;spray.push({a,v})}simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
+function drop(x,y){fall=null;spray=[];for(let k=0;k<16;k++){const a=Math.random()*6.283,v=18+Math.random()*30;spray.push({a,v,vz:8+Math.random()*6,done:0})}simDrop(x,y);dropAt=[x,y];state='run';tries++;$('tries').textContent=tries;marks.push({x,y,s:-1});splash={x,y,t:0};lastRes=null;say('Хвиля йде…');plop()}
 function ring(x,y,amp){for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){const X=x+i,Y=y+j;if(X<1||Y<1||X>=N-1||Y>=N-1||blk[Y*N+X])continue;const v=-amp*Math.exp(-(i*i+j*j)/6);U[Y*N+X]+=v;P[Y*N+X]+=v}}
 function score(){if(!marks.length)return;const m=marks[marks.length-1];if(LV.tune){const j=judge();m.s=j.ok?1:Math.max(0.2,0.95-j.err/70)}else m.s=woke()?0.5:Math.min(...MX)/T}
 function win(){state='win';phase='A';finT=0;ringT=-1;theta=0;win.n=0;score();doneSet.add(lvI);store.set('pleso-done2',[...doneSet].join(','));paintLv();
 const n=BUOYS.length;$('fint').textContent=n===1?'Латаття розкрилося':n===2?'Обидва розкрилися':n===3?'Усі три розкрилися':n===4?'Усі чотири розкрилися':'Усі латаття розкрилися';
-$('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;
+$('fins').textContent=tries===1?'з першої спроби':'спроба № '+tries;if(lvI===LAST&&!LV.tune){$('fint').textContent='Усі п’ятдесят ставків';$('fins').textContent='плесо засинає'}
 if(LV.tune){$('fint').textContent='Ставок зіграв '+LV.tune.title;$('fins').textContent='★'.repeat(stars)+'☆'.repeat(3-stars)+(stars===3?'  ритм точний':stars===2?'  ритм майже точний':'  порядок правильний, ритм ще можна вирівняти')}
 say(LV.tune?'Мелодія прозвучала правильно.':'Хвиля підняла всі латаття до межі, і вони розкрилися.');$('next').style.display='inline-block';$('next').firstChild.textContent=lvI<LAST?'Далі':'З початку';
 if(!LV.tune)[0,2,3].forEach((k,j)=>tone(NOTES[k]/2,0.25+j*0.09,1.6,0.07))}
@@ -331,10 +405,22 @@ const nk=k+len/Math.sqrt(cs/cn);if(nk<d[j]){d[j]=nk;push(j,nk)}}}return d}
 function contour(d,lv,K){const p=new Path2D();for(let y=1;y<N-2;y++)for(let x=1;x<N-2;x++){const i=y*N+x,a=d[i],b=d[i+1],c=d[i+N+1],e=d[i+N];if(a>1e8||b>1e8||c>1e8||e>1e8)continue;const lo=Math.min(a,b,c,e);if(lo>lv||Math.max(a,b,c,e)<lv)continue;const pts=[];
 if((a<lv)!==(b<lv))pts.push(x+(lv-a)/(b-a),y);if((b<lv)!==(c<lv))pts.push(x+1,y+(lv-b)/(c-b));if((e<lv)!==(c<lv))pts.push(x+(lv-e)/(c-e),y+1);if((a<lv)!==(e<lv))pts.push(x,y+(lv-a)/(e-a));
 for(let q=0;q+3<pts.length;q+=4){p.moveTo((pts[q]+.5)*K,(pts[q+1]+.5)*K);p.lineTo((pts[q+2]+.5)*K,(pts[q+3]+.5)*K)}}return p}
+// a frog seen from above, sitting on its leaf: folded hind legs, a speckled back, bulging eyes, a body that swells as it breathes; asleep its eyes are shut, awake they are open and yellow
+function frog(cx,cy,K,awake,now,k){const s=K*1.3,br=1+0.04*Math.sin(now/(awake?160:700)+k*2);g.save();g.translate(cx,cy+0.3*K);g.rotate(-0.5+k*1.7);
+const leg=(sg)=>{g.fillStyle='#3d7a2c';g.beginPath();g.ellipse(sg*1.15*s,0.55*s,0.75*s,0.42*s,sg*0.5,0,7);g.fill();g.beginPath();g.ellipse(sg*1.35*s,1.15*s,0.55*s,0.22*s,sg*-0.4,0,7);g.fill();
+g.fillStyle='#4e9a38';for(let t=0;t<3;t++){g.beginPath();g.arc(sg*(1.6+0.18*t)*s,(1.25+0.18*(t-1))*s,0.12*s,0,7);g.fill()}
+g.fillStyle='#3d7a2c';g.beginPath();g.ellipse(sg*0.75*s,-0.85*s,0.32*s,0.16*s,sg*-0.9,0,7);g.fill()};leg(-1);leg(1);
+const bg=g.createRadialGradient(-0.2*s,-0.3*s,0.1*s,0,0,1.3*s);bg.addColorStop(0,'#86c95a');bg.addColorStop(1,'#3a7a2a');g.fillStyle=bg;g.beginPath();g.ellipse(0,0.1*s,0.95*s*br,1.2*s,0,0,7);g.fill();
+g.fillStyle='rgba(30,70,20,.55)';for(let t=0;t<5;t++){g.beginPath();g.arc(Math.sin(t*2.4)*0.45*s,(0.5-t*0.25)*s,(0.1+0.05*(t%2))*s,0,7);g.fill()}
+g.strokeStyle='rgba(210,230,150,.6)';g.lineWidth=Math.max(1,0.08*s);g.beginPath();g.moveTo(-0.55*s,-0.6*s);g.quadraticCurveTo(-0.7*s,0.3*s,-0.45*s,0.95*s);g.moveTo(0.55*s,-0.6*s);g.quadraticCurveTo(0.7*s,0.3*s,0.45*s,0.95*s);g.stroke();
+g.fillStyle='#5fae40';g.beginPath();g.ellipse(0,-0.95*s,0.7*s,0.5*s,0,0,7);g.fill();
+for(const sg of[-1,1]){g.fillStyle='#4e9a38';g.beginPath();g.arc(sg*0.42*s,-1.12*s,0.3*s,0,7);g.fill();g.fillStyle=awake?'#f4d14a':'#2a3a1a';g.beginPath();if(awake)g.arc(sg*0.42*s,-1.14*s,0.2*s,0,7);else g.ellipse(sg*0.42*s,-1.12*s,0.2*s,0.05*s,0,0,7);g.fill();if(awake){g.fillStyle='#111';g.beginPath();g.ellipse(sg*0.42*s,-1.14*s,0.06*s,0.15*s,0,0,7);g.fill();g.fillStyle='#fff';g.beginPath();g.arc(sg*0.38*s,-1.22*s,0.05*s,0,7);g.fill()}}
+g.restore()}
 function heat(s){return s<0?'rgba(255,255,255,.6)':s>=1?'#7be0a0':s>=.85?'#ff9d4d':s>=.6?'#f2cf5b':'#8fb4d6'}
 function label(t,x,y,px,col){g.font='600 '+Math.round(14*px)+'px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.lineWidth=3.5*px;g.strokeStyle='rgba(8,24,32,.85)';g.strokeText(t,x,y);g.fillStyle=col||'#fff';g.fillText(t,x,y)}
 function overlay(now){const K=size/N,px=size/600;g.clearRect(0,0,size,size);ov.style.opacity=camK<0.02?1:0;if(camK>=0.02)return;
 const L=LEVELS[lvI];
+{const dtf=Math.min(.05,Math.max(0,(now-fishT)/1000));fishT=now;swim(dtf);drawFish(K,px);if(state!=='card')dragon(dtf,K,px,now)}
 g.fillStyle='rgba(235,240,215,.42)';for(const q of specks){const i=(q.y|0)*N+(q.x|0);if(!blk[i]&&!blk[i+1]&&!blk[i-1]&&!blk[i+N]&&!blk[i-N]){q.x-=(U[i+1]-U[i-1])*9;q.y-=(U[i+N]-U[i-N])*9}q.x+=(q.hx-q.x)*.012;q.y+=(q.hy-q.y)*.012;if(blk[(q.y|0)*N+(q.x|0)]){q.x=q.hx;q.y=q.hy}g.fillRect((q.x+.5)*K-px,(q.y+.5)*K-px,2*px,2*px)}
 for(const m of marks){const a=(m.x+.5)*K,b=(m.y+.5)*K;g.beginPath();g.arc(a,b,4.2*px,0,7);g.fillStyle=heat(m.s);g.fill();g.lineWidth=1.4*px;g.strokeStyle='rgba(8,24,32,.8)';g.stroke()}
 if(L.tune){const t=L.tune;BUOYS.forEach(([x,y],k)=>{g.strokeStyle=PITCH[t.f[k]];g.lineWidth=3*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,6.3*K,0,7);g.stroke()});
@@ -355,39 +441,55 @@ g.strokeStyle='#fff';g.lineWidth=2*px;g.beginPath();g.arc(cx,cy,5*px,0,7);g.stro
 else{for(const[x,y]of BUOYS)if(Math.hypot(x-hx,y-hy)<16){g.fillStyle='rgba(240,120,110,.16)';g.strokeStyle='rgba(240,120,110,.7)';g.lineWidth=1.5*px;g.beginPath();g.arc((x+.5)*K,(y+.5)*K,16*K,0,7);g.fill();g.stroke()}
 g.strokeStyle='rgba(240,120,110,.95)';g.lineWidth=2.5*px;const r=6*px;g.beginPath();g.moveTo(cx-r,cy-r);g.lineTo(cx+r,cy+r);g.moveTo(cx+r,cy-r);g.lineTo(cx-r,cy+r);g.stroke()}}}
 QS.forEach(([x,y],k)=>{const cx=(x+.5)*K,cy=(y+.5)*K,up=state==='done'&&MQ[k]>=LV.Tq;g.fillStyle='rgba(40,110,45,.95)';g.beginPath();g.arc(cx,cy,3.4*K,0.5,6.6);g.lineTo(cx,cy);g.fill();g.strokeStyle='rgba(15,50,20,.8)';g.lineWidth=1.2*px;g.stroke();
-g.font=Math.round(3.9*K)+'px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText('🐸',cx,cy+0.2*K);
+frog(cx,cy,K,up,now,k);
 if(up)label('!',cx+3.6*K,cy-3.6*K,px,'#ff8a7a');else if(state!=='done'||MQ[k]<LV.Tq){const ph=(now/900+k*0.4)%1;g.font='600 '+Math.round((9+4*ph)*px)+'px system-ui,sans-serif';g.fillStyle='rgba(255,255,255,'+(0.75*(1-ph))+')';g.fillText('z',cx+(3+2*ph)*K,cy-(2.5+3*ph)*K)}
 if(state==='done')label(Math.min(999,Math.round(MQ[k]/LV.Tq*100))+'%',cx,cy+6.5*K,px,MQ[k]>=LV.Tq?'#ff8a7a':'#9df0b8')});
 if(state==='done'&&lastRes)BUOYS.forEach(([x,y],k)=>{const f=lastRes[k];label(f>=1?'✓':Math.min(99,Math.round(f*100))+'%',(x+.5)*K,(y+.5)*K-8.5*K,px,f>=1?'#9df0b8':heat(f))});
 if(fall){const a=Math.min(1,fall.t/0.24),cx=(fall.x+.5)*K,cy=(fall.y+.5)*K,off=(1-a)*(1-a)*46*px;g.fillStyle='rgba(4,16,24,'+(0.12+0.3*a)+')';g.beginPath();g.ellipse(cx,cy,(9-5*a)*px,(6-3*a)*px,0,0,7);g.fill();
 g.fillStyle='rgba(235,247,255,.95)';g.beginPath();g.ellipse(cx-off*.35,cy-off,(3.2+1.6*(1-a))*px,(4.4+3*(1-a))*px,0.3,0,7);g.fill()}
-if(splash&&splash.t<0.9){const tt2=splash.t/0.9,cx=(splash.x+.5)*K,cy=(splash.y+.5)*K;for(const q of spray){const d=q.v*px*(tt2-0.45*tt2*tt2)*1.5,rr=(2.2-1.4*tt2)*px;g.fillStyle='rgba(240,250,255,'+(0.9*(1-tt2))+')';g.beginPath();g.arc(cx+Math.cos(q.a)*d,cy+Math.sin(q.a)*d,rr,0,7);g.fill()}
+if(splash&&splash.t<0.9){const tt2=splash.t/0.9,cx=(splash.x+.5)*K,cy=(splash.y+.5)*K;for(const q of spray){const T=splash.t*0.55,d=q.v*px*T*1.6,z=q.vz*T-0.5*60*T*T,rr=(2.1-0.8*tt2)*px,gx=cx+Math.cos(q.a)*d,gy=cy+Math.sin(q.a)*d; // each drop flies a parabola: out at its own speed, up and back down under gravity
+if(z<=0){if(!q.done&&T>0.05){q.done=1;ringlets.push({x:gx/K,y:gy/K,t:0})}continue}g.fillStyle='rgba(4,16,24,.18)';g.beginPath();g.arc(gx,gy,rr*0.8,0,7);g.fill();g.fillStyle='rgba(240,250,255,.92)';g.beginPath();g.arc(gx,gy-z*px,rr,0,7);g.fill()}
 g.fillStyle='rgba(255,255,255,'+(0.55*(1-tt2))+')';g.beginPath();g.arc(cx,cy,(3+5*Math.sin(tt2*3.1))*px,0,7);g.fill()}
+for(const r2 of ringlets){r2.t+=1/60;if(r2.t>0.7)continue;const a2=r2.t/0.7;g.strokeStyle='rgba(255,255,255,'+(0.55*(1-a2))+')';g.lineWidth=Math.max(1,1.2*px*(1-a2));g.beginPath();g.arc(r2.x*K,r2.y*K,(1+a2*7)*px,0,7);g.stroke()}ringlets=ringlets.filter(r2=>r2.t<0.7);
+// the rebound drop: a small jet throws one droplet up from the centre and it falls back (drawn only)
+if(splash&&splash.t>0.16&&splash.t<0.86){const u=(splash.t-0.16)/0.7,h=Math.sin(u*Math.PI)*24*px,cx=(splash.x+.5)*K,cy=(splash.y+.5)*K;g.fillStyle='rgba(4,16,24,'+(0.25-0.12*Math.sin(u*Math.PI))+')';g.beginPath();g.ellipse(cx,cy,2.6*px,1.7*px,0,0,7);g.fill();
+g.fillStyle='rgba(240,250,255,.95)';g.beginPath();g.ellipse(cx,cy-h,2.1*px,(2.4+1.2*Math.abs(Math.cos(u*Math.PI)))*px,0,0,7);g.fill()}
+if(splash&&splash.t>0.84&&splash.t<1.5){const a=(splash.t-0.84)/0.66;g.strokeStyle='rgba(255,255,255,'+(0.7*(1-a))+')';g.lineWidth=(1.8*(1-a)+.6)*px;g.beginPath();g.arc((splash.x+.5)*K,(splash.y+.5)*K,(3+a*14)*px,0,7);g.stroke()}
 if(splash&&splash.t<1){const a=splash.t;g.strokeStyle='rgba(255,255,255,'+(0.9*(1-a))+')';g.lineWidth=(3*(1-a)+1)*px;g.beginPath();g.arc((splash.x+.5)*K,(splash.y+.5)*K,(6+a*30)*px,0,7);g.stroke()}
+if(L.tune)BUOYS.forEach(([x,y],k)=>{if(!wasLit[k])return;const a=(now-wasLit[k])/1400;if(a<0||a>=1)return;const col=PITCH[L.tune.f[k]];g.save();g.globalAlpha=Math.sin(Math.PI*Math.min(1,a*1.4))*(1-a*.3);
+g.font='700 '+Math.round((16+8*a)*px)+'px Georgia,serif';g.textAlign='center';g.textBaseline='middle';g.lineWidth=3*px;g.strokeStyle='rgba(8,24,32,.8)';const nx=(x+.5)*K+Math.sin(a*6+k)*6*px,ny=(y+.5)*K-(6+a*18)*K*.6;g.strokeText('♪',nx,ny);g.fillStyle=col;g.fillText('♪',nx,ny);g.restore()});
 for(const b of bursts){if(b.t<0||b.t>=1)continue;const a=b.t;g.strokeStyle='rgba(255,214,120,'+(0.95*(1-a))+')';g.lineWidth=(5*(1-a)+1)*px;g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(4+a*13)*K,0,7);g.stroke();
 g.fillStyle='rgba(255,236,180,'+(0.35*(1-a)*(1-a))+')';g.beginPath();g.arc((b.x+.5)*K,(b.y+.5)*K,(3+a*6)*K,0,7);g.fill()}}
 const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 function camera(){const k=ease(camK),el=(90-68*k)*Math.PI/180,d=Math.exp(Math.log(600)*(1-k)+Math.log(104)*k),ex=60+12*k,th=theta*Math.min(1,k*3);
-const tg=[60,60-3*k,0],cp=[tg[0]+d*Math.cos(el)*Math.sin(th),tg[1]+d*Math.cos(el)*Math.cos(th),d*Math.sin(el)];
+const f=ease(foc),fx=dropAt?dropAt[0]+.5:60,fy=dropAt?dropAt[1]+.5:60,el2=el+f*0.25,d2=d*(1-0.6*f);
+const tg=[60+(fx-60)*f,60-3*k+(fy-60+3*k)*f,0],cp=[tg[0]+d2*Math.cos(el2)*Math.sin(th),tg[1]+d2*Math.cos(el2)*Math.cos(th),d2*Math.sin(el2)];
 const w=Math.min(1,k*5),up=[0,-(1-w),w],ul=Math.hypot(up[1],up[2]);
-gl.uniform3f(U_.uCP,cp[0],cp[1],cp[2]);gl.uniform3f(U_.uCT,tg[0],tg[1],tg[2]);gl.uniform3f(U_.uUp,0,up[1]/ul,up[2]/ul);gl.uniform1f(U_.uF,d/ex);gl.uniform1f(U_.uTilt,Math.min(1,k*1.5));gl.uniform1f(U_.uFin,fin)}
+gl.uniform3f(U_.uCP,cp[0],cp[1],cp[2]);gl.uniform3f(U_.uCT,tg[0],tg[1],tg[2]);gl.uniform3f(U_.uUp,0,up[1]/ul,up[2]/ul);gl.uniform1f(U_.uF,d2/(ex*(1-0.72*f)));gl.uniform1f(U_.uTilt,Math.min(1,k*1.5));gl.uniform1f(U_.uFin,fin)}
 function steps(dt,limit){acc+=dt*SPEED*tscale;let n=0;while(acc>=1&&(!limit||STEP<STEPS)&&n<(tscale>1?36:12)){simTick();acc-=1;n++}if(acc>3)acc=0}
 function finale(dt,now){finT+=dt;
 if(phase==='A'){tscale=Math.max(0.14,1-finT/0.3*0.86);steps(dt);const n=Math.floor(finT/0.28);if(n>win.n&&win.n<BUOYS.length){const b=BUOYS[litOrder[win.n]??win.n];bursts.push({x:b[0],y:b[1],t:0});win.n++}
-if(finT>0.35+0.28*BUOYS.length){phase='B';finT=0;camGoal=1;camDur=1.9;finGoal=0.45;closing=lvI===LAST;stage.classList.add('fin')}}
+if(finT>0.35+0.28*BUOYS.length){phase='B';finT=0;camGoal=1;camDur=1.9;finGoal=0.45;closing=true;stage.classList.add('fin')}}
 else if(phase==='B'){const f=Math.pow(0.02,dt);for(let i=0;i<N*N;i++){U[i]*=f;P[i]*=f}if(camGoal)theta+=dt*0.1;
-if(finT>2.1){if(lvI<LAST){phase='D';finT=0;finGoal=0.55}else{simReset();wasLit=[0,0,0,0,0,0];litOrder=[];closing=false;simDrop(dropAt[0],dropAt[1]);phase='C';finT=0;tscale=LV.tune?1:0.5;$('rep').classList.add('on')}}}
-else if(phase==='C'){theta+=dt*0.1;steps(dt,true);if(MX.every(v=>v>=T)||STEP>=STEPS){phase='D';finT=0;finGoal=1;$('rep').classList.remove('on')}}
+if(finT>2.1){simReset();wasLit=[0,0,0,0,0,0];litOrder=[];closing=false;phase='C0';finT=0;focGoal=1;dropOn=1;dropT=-0.55;relanded=0;$('rep').classList.add('on')}}
+// the replay: the camera dives to the spot, the drop falls in slow motion, the splash plays, then the camera rises again
+else if(phase==='C0'){theta+=dt*0.1;if(finT>0.75)dropT=Math.min(0,dropT+dt*0.8);if(dropT>=0){simDrop(dropAt[0],dropAt[1]);plopSlow();phase='C';finT=0;tscale=0.05}}
+else if(phase==='C'){theta+=dt*0.1;dropT+=dt*0.8;if(dropT>1.33&&!relanded){relanded=1;ring(dropAt[0],dropAt[1],0.22);tone(410,0,0.5,0.05)}
+if(dropT>1.5){focGoal=0;tscale=Math.min(LV.tune?1:0.5,tscale+dt*0.6)}if(dropT>2.6)dropOn=0;steps(dt,true);if(dropT>1.5&&(MX.every(v=>v>=T)||STEP>=STEPS)){phase='D';finT=0;finGoal=1;flyGoal=1;dropOn=0;focGoal=0;$('rep').classList.remove('on')}}
 else{theta+=dt*0.11;tscale=finT<1.3?0.12:Math.min(0.5,0.12+(finT-1.3)*0.3);steps(dt);
 if(ringT<0&&finT>0.5){BUOYS.forEach(([x,y])=>ring(x,y,0.5));ringT=finT}
 if(ringT>0&&finT-ringT>2.4){const b=BUOYS[Math.floor(Math.random()*BUOYS.length)];ring(b[0],b[1],0.4);ringT=finT}
-if(finT>0.9)finEl.classList.add('on')}}
-function frame(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
+if(finT>0.9)finEl.classList.add('on');
+if(!leap&&finT>2.2&&finT-leapT>4.5){for(let g2=0;g2<60;g2++){const x=20+Math.random()*80,y=20+Math.random()*80,a=Math.random()*6.283,dx=Math.cos(a),dy=Math.sin(a),x1=x+dx*16,y1=y+dy*16;
+if(blk[(y|0)*N+(x|0)]||blk[(y1|0)*N+(x1|0)]||blk[((y+y1)/2|0)*N+((x+x1)/2|0)]||BUOYS.some(([bx,by])=>Math.hypot(bx-x,by-y)<8||Math.hypot(bx-x1,by-y1)<8))continue;leap={x,y,dx,dy,t:0};ring(x|0,y|0,0.3);tone(700,0,0.18,0.03);tone(380,0.02,0.22,0.025);break}leapT=finT}
+if(leap){leap.t+=dt/1.1;if(leap.t>=1){ring(Math.round(leap.x+leap.dx*16),Math.round(leap.y+leap.dy*16),0.4);plop();leap=null}}}}
+function frame(now){const dt=Math.max(0,Math.min(0.05,(now-last)/1000));last=now;
 camK+=Math.sign(camGoal-camK)*Math.min(Math.abs(camGoal-camK),dt/camDur);
+foc+=Math.sign(focGoal-foc)*Math.min(Math.abs(focGoal-foc),dt/(focGoal?1.1:2.2));fly+=(flyGoal-fly)*Math.min(1,dt*0.7);
 fin+=Math.sign(finGoal-fin)*Math.min(Math.abs(finGoal-fin),dt/(finGoal?1.6:0.6));
 for(const b of bursts)b.t+=dt*(state==='win'?1.1:1.6);
 BUOYS.forEach(([x,y],k)=>{const f=Math.min(1,MX[k]/T);if(f>=1&&!wasLit[k]){wasLit[k]=now;litOrder.push(k);bursts.push({x,y,t:0});if(LV.tune)note(LV.tune.f[k]);else if(phase!=='C')chime(litOrder.length-1)}
-const pop=wasLit[k]&&!closing?0.22*Math.exp(-(now-wasLit[k])/260):0,tg=closing?0:(f>=1?1:Math.pow(f,2.4)*0.9);disp[k]+=(tg-disp[k])*Math.min(1,dt*(closing?3:7));BUOYS[k].show=Math.max(0,disp[k])+pop});
+const pop=wasLit[k]&&!closing?0.22*Math.exp(-Math.max(0,now-wasLit[k])/260):0,tg=closing?0:(f>=1?1:Math.pow(f,2.4)*0.9);disp[k]+=(tg-disp[k])*Math.min(1,dt*(closing?3:7));BUOYS[k].show=Math.max(0,disp[k])+pop});
 if(state==='fall'&&fall){fall.t+=dt;if(fall.t>=0.24)drop(fall.x,fall.y)}
 if(state==='win')finale(dt,now);
 else if(state==='run'){steps(dt,true);if(woke()){state='done';score();lastRes=MX.map(v=>v/T);say('Жабка прокинулася: хвиля біля неї була зависока. Знайдіть місце, звідки хвиля дійде до латать, але обмине жабку. Торкніться води або натисніть «Ще раз».')}
@@ -396,23 +498,25 @@ else if(STEP>=STEPS&&LV.tune){state='done';score();lastJ=judge();say('Хвиля
 else if(STEP>=STEPS){state='done';score();lastRes=MX.map(v=>v/T);const lit=MX.filter(v=>v>=T).length,low=Math.min(99,Math.round(Math.min(...lastRes)*100));
 say((BUOYS.length>1?'Розкрилося '+lit+' з '+BUOYS.length+'. Найслабша хвиля дала ':'Хвиля дала ')+low+'% потрібної висоти. '+(low>=85?'Майже! Посуньте краплю зовсім трохи.':'Спробуйте з іншого місця.')+' Торкніться води або натисніть «Ще раз».')}}
 else if(state==='done'&&STEP<STEPS*3){simTick();simTick()}
-if(splash)splash.t+=dt*2;
+if(splash)splash.t+=dt*2;crickets(dt);
 if(gl){gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,N,N,gl.RED,gl.FLOAT,U);gl.uniform1f(U_.uT,now/1000);
-const b=new Float32Array(24).fill(-999),lt=new Float32Array(6).fill(99);BUOYS.forEach(([x,y],k)=>{b[k*4]=x+.5;b[k*4+1]=y+.5;b[k*4+2]=BUOYS[k].show||0;const on=wasLit[k]&&!closing;b[k*4+3]=on?1:0;if(on)lt[k]=(now-wasLit[k])/1000});for(let k=BUOYS.length;k<6;k++){b[k*4+2]=0;b[k*4+3]=0}
-gl.uniform4fv(U_.uB,b);gl.uniform1fv(U_.uLt,lt);camera();gl.drawArrays(gl.TRIANGLES,0,3)}
+const b=new Float32Array(24).fill(-999),lt=new Float32Array(6).fill(99);BUOYS.forEach(([x,y],k)=>{b[k*4]=x+.5;b[k*4+1]=y+.5;b[k*4+2]=BUOYS[k].show||0;const on=wasLit[k]&&!closing;b[k*4+3]=on?1:0;if(on)lt[k]=Math.max(0,now-wasLit[k])/1000});for(let k=BUOYS.length;k<6;k++){b[k*4+2]=0;b[k*4+3]=0}
+gl.uniform4fv(U_.uB,b);gl.uniform4f(U_.uDrop,dropAt?dropAt[0]+.5:0,dropAt?dropAt[1]+.5:0,dropT,dropOn);gl.uniform1f(U_.uFly,fly);gl.uniform1f(U_.uRise,lvI===LAST&&state==='win'&&phase==='D'?finT:0);gl.uniform4f(U_.uLeap,leap?leap.x+.5:0,leap?leap.y+.5:0,leap?leap.t:0,leap?1:0);gl.uniform2f(U_.uLeapD,leap?leap.dx:1,leap?leap.dy:0);gl.uniform1fv(U_.uLt,lt);camera();gl.drawArrays(gl.TRIANGLES,0,3)}
 overlay(now);requestAnimationFrame(frame)}
 function cell(e){const r=stage.getBoundingClientRect();return[Math.floor((e.clientX-r.left)/r.width*N),Math.floor((e.clientY-r.top)/r.height*N)]}
 stage.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||isDown)hover=cell(e)});
 stage.addEventListener('pointerdown',e=>{if(e.target.closest('#card'))return;isDown=true;hover=cell(e)});
 stage.addEventListener('pointerleave',()=>{hover=null;isDown=false});
-stage.addEventListener('pointerup',e=>{if(!isDown)return;isDown=false;if(state==='done'){reset();if(e.pointerType!=='mouse')hover=null;return}if(state!=='idle'||camK>0.01)return;const[x,y]=cell(e);if(e.pointerType!=='mouse')hover=null;
+function skipRep(){if(state!=='win'||(phase!=='C0'&&phase!=='C'))return;if(phase==='C0'){simReset();simDrop(dropAt[0],dropAt[1])}while(!MX.every(v=>v>=T)&&STEP<STEPS)simTick();const tn=performance.now();BUOYS.forEach((_,k)=>{if(MX[k]>=T&&!wasLit[k]){wasLit[k]=tn;litOrder.push(k)}}); // open them quietly: no chord of every chime at once
+phase='D';finT=0;finGoal=1;flyGoal=1;dropOn=0;focGoal=0;tscale=0.12;$('rep').classList.remove('on')}
+stage.addEventListener('pointerup',e=>{if(!isDown)return;isDown=false;if(state==='win'){skipRep();return}if(state==='done'){reset();if(e.pointerType!=='mouse')hover=null;return}if(state!=='idle'||camK>0.01)return;const[x,y]=cell(e);if(e.pointerType!=='mouse')hover=null;
 if(x<1||y<1||x>=N-1||y>=N-1||blk[y*N+x]){say('Сюди кинути не можна. Киньте краплю у воду.');return}
 if(!canDrop(x,y)){say('Занадто близько до латаття або жабки. Киньте краплю трохи далі.');return}startFall(x,y)});
 $('listen').onclick=$('clisten').onclick=listen;$('again').onclick=reset;$('hint').onclick=hint;$('next').onclick=next;$('cgo').onclick=begin;
 $('snd').onclick=()=>{muted=!muted;store.set('pleso-mute',muted?'1':'0');sndLabel();if(!muted)tone(NOTES[0],0,0.5,0.08)};sndLabel();
 addEventListener('keydown',e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
 if(state==='card'){if(e.code==='Enter'||e.code==='Space'){e.preventDefault();begin()}return}
-if(e.code==='KeyM'){e.preventDefault();listen()}if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}if(e.code==='KeyN'&&state==='win'){e.preventDefault();next()}});
+if(e.code==='Space'&&state==='win'){e.preventDefault();skipRep()}if(e.code==='KeyM'){e.preventDefault();listen()}if(e.code==='KeyR'){e.preventDefault();reset()}if(e.code==='KeyH'){e.preventDefault();hint()}if(e.code==='KeyN'&&state==='win'){e.preventDefault();next()}});
 window.__test={level:i=>{setLevel(i);begin()},drop:(x,y)=>{reset();camK=0;fin=0;drop(x,y)},hover:(x,y)=>{hover=x==null?null:[x,y]},
 fast:()=>{while(state==='run'&&STEP<STEPS&&!MX.every(v=>v>=T))simTick()},state:()=>[lvI,state,phase,STEP,+camK.toFixed(2),+finT.toFixed(1),MX.map(v=>+(v/T).toFixed(2))]};
 setLevel(Math.min(LAST,Math.max(0,+(store.get('pleso-level2')||0)||0)));requestAnimationFrame(frame);
