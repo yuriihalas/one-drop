@@ -22,4 +22,4 @@ button:hover{background:#25485a}
 button.go{background:#2f8f6f;border-color:#63c9a4;color:#fff}
 #next,#hint,#replay{display:none}
 #sub{font-size:13px;color:#8fa6af;margin-top:6px;width:100%;max-width:760px}
-@media (max-width:600px){#top{flex-wrap:wrap}#bar{flex-wrap:wrap}#msg{flex-basis:100%}}
+@media (max-width:600px){#top{flex-wrap:wrap}#lvs{flex-wrap:wrap;max-width:100%}#bar{flex-wrap:wrap}#msg{flex-basis:100%}}
